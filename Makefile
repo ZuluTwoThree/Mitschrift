@@ -1,4 +1,4 @@
-.PHONY: models build run
+.PHONY: models build run test
 
 models:
 	zsh Scripts/download-models.sh
@@ -8,3 +8,6 @@ build:
 
 run: build
 	open dist/Mitschrift.app
+
+test:
+	zsh Scripts/test-core.sh

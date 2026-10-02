@@ -1,23 +1,36 @@
-name: Verify macOS app sources
+name: Verify sources
 
 on:
   push:
   pull_request:
 
 jobs:
-  typecheck:
+  core:
+    name: Build and test MitschriftCore
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Type-check SwiftUI application
+      - name: Build package
+        run: swift build
+      - name: Run tests
+        run: swift test
+
+  macos-app:
+    name: Type-check macOS app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Type-check SwiftUI application with core sources
         run: |
           swiftc -typecheck -parse-as-library \
+            -module-name Mitschrift \
             -framework SwiftUI \
             -framework AppKit \
             -framework AVFoundation \
             -framework UniformTypeIdentifiers \
-            Sources/MitschriftApp.swift
+            $(find Sources/MitschriftCore -name '*.swift') \
+            Sources/MitschriftMac/*.swift
       - name: Type-check build helpers
         run: |
-          swiftc -typecheck -parse-as-library -framework AppKit Sources/IconMaker.swift
-          swiftc -typecheck -parse-as-library Sources/ICNSMaker.swift
+          swiftc -typecheck -parse-as-library -framework AppKit Tools/IconMaker.swift
+          swiftc -typecheck -parse-as-library Tools/ICNSMaker.swift

@@ -11,6 +11,10 @@ CONTENTS_DIR="$APP_DIR/Contents"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 ICONSET_DIR="$BUILD_DIR/AppIcon.iconset"
 
+# Plattformneutraler Kern und macOS-App werden als ein Modul kompiliert.
+CORE_SOURCES=("$PROJECT_DIR"/Sources/MitschriftCore/**/*.swift(N))
+MAC_SOURCES=("$PROJECT_DIR"/Sources/MitschriftMac/*.swift(N))
+
 for model in base small; do
   if [[ ! -f "$MODELS_DIR/ggml-$model.bin" ]]; then
     echo "Fehlendes Modell: $MODELS_DIR/ggml-$model.bin" >&2
@@ -27,7 +31,7 @@ swiftc \
   -module-cache-path "$BUILD_DIR/module-cache" \
   -parse-as-library \
   -framework AppKit \
-  "$PROJECT_DIR/Sources/IconMaker.swift" \
+  "$PROJECT_DIR/Tools/IconMaker.swift" \
   -o "$BUILD_DIR/IconMaker"
 "$BUILD_DIR/IconMaker" "$BUILD_DIR/AppIcon-1024.png"
 
@@ -46,7 +50,7 @@ swiftc \
   -sdk "$SDK_PATH" \
   -module-cache-path "$BUILD_DIR/module-cache" \
   -parse-as-library \
-  "$PROJECT_DIR/Sources/ICNSMaker.swift" \
+  "$PROJECT_DIR/Tools/ICNSMaker.swift" \
   -o "$BUILD_DIR/ICNSMaker"
 "$BUILD_DIR/ICNSMaker" "$ICONSET_DIR" "$RESOURCES_DIR/AppIcon.icns"
 
@@ -59,7 +63,9 @@ swiftc \
   -framework AppKit \
   -framework AVFoundation \
   -framework UniformTypeIdentifiers \
-  "$PROJECT_DIR/Sources/MitschriftApp.swift" \
+  -module-name Mitschrift \
+  "${CORE_SOURCES[@]}" \
+  "${MAC_SOURCES[@]}" \
   -o "$CONTENTS_DIR/MacOS/Mitschrift"
 
 cp "$MODELS_DIR/ggml-base.bin" "$RESOURCES_DIR/models/ggml-base.bin"

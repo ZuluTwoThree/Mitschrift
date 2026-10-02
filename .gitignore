@@ -6,3 +6,5 @@ Models/*.bin.*
 *.swp
 /Mitschrift.app/
 /Releases/
+.claude/worktrees/
+.swiftpm/
