@@ -1,0 +1,23 @@
+name: Verify macOS app sources
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  typecheck:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Type-check SwiftUI application
+        run: |
+          swiftc -typecheck -parse-as-library \
+            -framework SwiftUI \
+            -framework AppKit \
+            -framework AVFoundation \
+            -framework UniformTypeIdentifiers \
+            Sources/MitschriftApp.swift
+      - name: Type-check build helpers
+        run: |
+          swiftc -typecheck -parse-as-library -framework AppKit Sources/IconMaker.swift
+          swiftc -typecheck -parse-as-library Sources/ICNSMaker.swift
