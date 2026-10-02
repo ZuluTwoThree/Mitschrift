@@ -4,3 +4,5 @@ dist/
 Models/*.bin
 Models/*.bin.*
 *.swp
+/Mitschrift.app/
+/Releases/
