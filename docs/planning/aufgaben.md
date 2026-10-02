@@ -5,6 +5,7 @@ Stand: 2026-10-03. Gegenstück zu `umsetzungsplan.md`: was nur du tun kannst, na
 ## Checkliste
 
 - [x] Mindestens 40 GB auf dem Mac frei (Stand 2026-10-03: 91 GB)
+- [ ] macOS aktualisiert (aktuelles Xcode verlangt eine neuere macOS-Version als 15.7)
 - [ ] Xcode installiert, Lizenz angenommen, iOS-Plattform geladen
 - [ ] `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` ausgeführt
 - [ ] `brew install xcodegen` ausgeführt
@@ -17,10 +18,11 @@ Stand: 2026-10-03. Gegenstück zu `umsetzungsplan.md`: was nur du tun kannst, na
 - [ ] `tailscale serve` auf dem Server aktiviert
 - [ ] Token erzeugt und sicher abgelegt
 
-## 1. Sofort: Xcode
+## 1. Sofort: macOS und Xcode
 
-Xcode braucht etwa 12 GB Download, rund 25 GB nach dem Entpacken und weitere 8 GB für die iOS-Simulator-Runtime.
+Xcode braucht etwa 12 GB Download, rund 25 GB nach dem Entpacken und weitere 8 GB für die iOS-Simulator-Runtime. Das aktuelle Xcode setzt eine neuere macOS-Version voraus, deshalb zuerst macOS aktualisieren.
 
+0. macOS über Systemeinstellungen → Allgemein → Softwareupdate aktualisieren. Nach dem Neustart prüfen, ob Homebrew-Werkzeuge noch laufen: `whisper-cli --help` und `ffmpeg -version`. Falls nicht: `brew reinstall whisper-cpp ffmpeg`.
 1. Xcode aus dem Mac App Store laden (kostenlos, Apple-ID nötig). Alternativ von developer.apple.com als `.xip`, das ist oft schneller.
 2. Xcode einmal starten, die Lizenz annehmen und bei der Komponentenauswahl die iOS-Plattform mitinstallieren. Falls später nötig: Xcode → Settings → Components → iOS.
 3. Im Terminal die aktive Entwicklerumgebung umstellen:
