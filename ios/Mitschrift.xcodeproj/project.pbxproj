@@ -27,7 +27,7 @@
 		C8982C6956FDC3DA79F834D4 /* PrivacyNoticeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyNoticeView.swift; sourceTree = "<group>"; };
 		E5975B3306DFCB2CC7384FFD /* MitschriftIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MitschriftIOSApp.swift; sourceTree = "<group>"; };
 		FD3DFC1B7F6C82B78EDA815C /* Mitschrift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Mitschrift; path = ..; sourceTree = SOURCE_ROOT; };
-		"TEMP_AD889F3F-0243-4DF5-8EB5-1841FDF6C2E4" /* Local.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Local.xcconfig; sourceTree = "<group>"; };
+		"TEMP_6DB61F69-34F3-4A84-BE59-28242F86F750" /* Local.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Local.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -130,10 +130,10 @@
 			);
 			sourceTree = "<group>";
 		};
-		"TEMP_9557E1D8-7603-4911-85FF-6C845BAFBBD0" /* ios */ = {
+		"TEMP_2691ADB6-E6B3-41E6-B89D-2C4CEDE7B772" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_AD889F3F-0243-4DF5-8EB5-1841FDF6C2E4" /* Local.xcconfig */,
+				"TEMP_6DB61F69-34F3-4A84-BE59-28242F86F750" /* Local.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -256,7 +256,7 @@
 		};
 		9544593DBAD3DE6E0FA87102 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_AD889F3F-0243-4DF5-8EB5-1841FDF6C2E4" /* Local.xcconfig */;
+			baseConfigurationReference = "TEMP_6DB61F69-34F3-4A84-BE59-28242F86F750" /* Local.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -313,7 +313,7 @@
 		};
 		B3A4657EE548AD83472E17E5 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_AD889F3F-0243-4DF5-8EB5-1841FDF6C2E4" /* Local.xcconfig */;
+			baseConfigurationReference = "TEMP_6DB61F69-34F3-4A84-BE59-28242F86F750" /* Local.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
