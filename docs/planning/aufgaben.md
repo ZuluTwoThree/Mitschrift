@@ -9,8 +9,9 @@ Stand: 2026-10-03. Gegenstück zu `umsetzungsplan.md`: was nur du tun kannst, na
 - [x] Xcode installiert, Lizenz angenommen, iOS-Plattform geladen
 - [x] `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` ausgeführt
 - [x] `brew install xcodegen` ausgeführt (2.46.0)
-- [ ] Apple-ID in Xcode hinterlegt
-- [ ] iPhone: Entwicklermodus an, Mac vertraut, Tailscale installiert
+- [x] Apple-ID in Xcode hinterlegt (Personal Team)
+- [x] iPhone: Entwicklermodus an, Mac vertraut (iPhone 11 Pro Max, iOS 26.6.2)
+- [ ] Tailscale auf dem iPhone installiert und angemeldet
 - [ ] Entscheidungen in Abschnitt 3 bestätigt oder geändert
 - [ ] Hardware-Ausgabe des Linux-Rechners geschickt
 - [ ] SSH-Zugang für Claude entschieden
