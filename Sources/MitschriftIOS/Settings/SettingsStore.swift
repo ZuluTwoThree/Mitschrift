@@ -39,7 +39,26 @@ final class SettingsStore: ObservableObject {
         token = endpoint?.token ?? ""
         language = defaults.string(forKey: Keys.language) ?? "de"
         privacyNoticeAccepted = defaults.bool(forKey: Keys.privacyAccepted)
+        #if DEBUG
+        applyDevelopmentOverrides()
+        #endif
     }
+
+    #if DEBUG
+    /// Für Simulator-Tests: `SIMCTL_CHILD_MITSCHRIFT_DEV_ENDPOINT` und `…_TOKEN` beim Start setzen.
+    private func applyDevelopmentOverrides() {
+        let env = ProcessInfo.processInfo.environment
+        guard let address = env["MITSCHRIFT_DEV_ENDPOINT"], let devToken = env["MITSCHRIFT_DEV_TOKEN"] else {
+            NSLog("Mitschrift: keine Dev-Overrides (MITSCHRIFT_DEV_ENDPOINT/TOKEN) gesetzt")
+            return
+        }
+        serverAddress = address
+        token = devToken
+        privacyNoticeAccepted = true
+        let saved = save()
+        NSLog("Mitschrift: Dev-Override %@ für %@ (%@)", saved ? "gespeichert" : "fehlgeschlagen", address, saveError ?? "ok")
+    }
+    #endif
 
     /// Der gespeicherte Endpunkt, falls vollständig.
     var endpoint: ServerEndpoint? { store.load() }

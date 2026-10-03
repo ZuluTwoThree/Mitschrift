@@ -2,10 +2,8 @@ import Foundation
 import Combine
 import MitschriftCore
 
-/// Zustand der iOS-Aufnahme: Berechtigung, Start/Stopp, Dauer, lokale WAV-Datei, Segmentbildung.
-///
-/// In WP4 landet das Audio nur in `Documents/Mitschrift`; die fertigen Segmente werden gezählt.
-/// WP5 reicht sie an `LiveTranscriptionSession` weiter.
+/// Zustand der iOS-Aufnahme: Berechtigung, Start/Stopp, Dauer, lokale WAV-Datei, Segmentbildung
+/// und, falls ein Server eingerichtet ist, die Live-Übertragung über `LiveTranscriptionSession`.
 @MainActor
 final class RecordingController: ObservableObject {
     enum State: Equatable {
@@ -13,27 +11,38 @@ final class RecordingController: ObservableObject {
         case recording
         case interrupted
         case stopping
-        case finished(fileName: String)
+        case finished
         case failed(String)
 
         var isRecording: Bool { self == .recording || self == .interrupted }
+    }
+
+    struct Result: Equatable {
+        var audioURL: URL
+        var transcriptURL: URL?
+        var transcript: Transcript
+        var liveIncomplete: Bool
+        /// Segmente, die lokal nicht eingereiht oder vom Server abgelehnt wurden.
+        var missingSegments: Int = 0
     }
 
     @Published private(set) var state: State = .idle
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var segmentCount = 0
     @Published private(set) var permissionDenied = false
+    @Published private(set) var liveSession: LiveTranscriptionSession?
+    @Published private(set) var result: Result?
+    /// Segmente, die wegen voller Warteschlange nicht eingereiht werden konnten. Audio bleibt in der Datei.
+    @Published private(set) var lostSegments = 0
 
     var elapsedText: String { RecordingNaming.elapsedText(elapsed) }
-
-    /// Wird für jedes fertige Segment (WAV-Daten) aufgerufen, auf dem Main-Actor.
-    var onSegment: ((Data) -> Void)?
 
     private let capture = AudioCaptureEngine()
     private let sampleQueue = DispatchQueue(label: "mitschrift.samples")
     private let sink = SampleSink()
     private var timer: Timer?
     private var startedAt: Date?
+    private var audioURL: URL?
 
     init() {
         let sink = self.sink
@@ -68,15 +77,8 @@ final class RecordingController: ObservableObject {
         state = .failed(message)
     }
 
-    func toggle() async {
-        if state.isRecording {
-            await stop()
-        } else {
-            await start()
-        }
-    }
-
-    func start() async {
+    /// Startet die Aufnahme. Mit `endpoint` läuft parallel die Live-Übertragung.
+    func start(endpoint: ServerEndpoint?, language: String) async {
         guard !state.isRecording else { return }
         if AudioCaptureEngine.permissionStatus != .granted {
             let granted = await AudioCaptureEngine.requestPermission()
@@ -93,8 +95,14 @@ final class RecordingController: ObservableObject {
             let newWriter = try WAVFileWriter(url: url)
             let sink = self.sink
             sampleQueue.sync { sink.begin(writer: newWriter) }
+            audioURL = url
+            result = nil
             segmentCount = 0
+            lostSegments = 0
             elapsed = 0
+            liveSession = endpoint.map { endpoint in
+                LiveTranscriptionSession(transport: URLSessionLiveTransport(endpoint: endpoint), language: language)
+            }
             try capture.start()
             startedAt = Date()
             state = .recording
@@ -106,10 +114,12 @@ final class RecordingController: ObservableObject {
                 }
             }
         } catch {
+            liveSession = nil
             state = .failed(error.localizedDescription)
         }
     }
 
+    /// Stoppt die Aufnahme, wartet auf den Server und speichert Audio und Mitschrift.
     func stop() async {
         guard state.isRecording else { return }
         state = .stopping
@@ -117,17 +127,56 @@ final class RecordingController: ObservableObject {
         timer = nil
         capture.stop()
         let sink = self.sink
-        let (fileName, rest) = sampleQueue.sync { sink.finish() }
+        let rest = sampleQueue.sync { sink.finish() }
         if let rest {
             deliver([rest])
         }
-        state = .finished(fileName: fileName)
+
+        var transcript = Transcript()
+        var incomplete = false
+        if let session = liveSession {
+            await session.finish()
+            transcript = session.transcript
+            // Unvollständig, wenn die Session nicht sauber endete, Segmente lokal verworfen wurden
+            // (Warteschlange voll) oder der Server einzelne Segmente abgelehnt hat (400/413).
+            if case .finished = session.status {} else { incomplete = true }
+            if lostSegments > 0 || session.droppedCount > 0 { incomplete = true }
+        }
+
+        guard let audioURL else {
+            state = .failed("Die Aufnahmedatei wurde nicht gefunden.")
+            return
+        }
+        var transcriptURL: URL?
+        if !transcript.isEmpty {
+            let url = audioURL.deletingLastPathComponent()
+                .appendingPathComponent(RecordingNaming.transcriptFileName(forAudioNamed: audioURL.lastPathComponent))
+            do {
+                try transcript.fullText.write(to: url, atomically: true, encoding: .utf8)
+                transcriptURL = url
+            } catch {
+                incomplete = true
+            }
+        }
+        let missing = lostSegments + (liveSession?.droppedCount ?? 0)
+        result = Result(audioURL: audioURL, transcriptURL: transcriptURL, transcript: transcript, liveIncomplete: incomplete, missingSegments: missing)
+        state = .finished
+    }
+
+    /// Ersetzt das Ergebnis, etwa nach nachträglicher Übertragung.
+    func update(result: Result) {
+        self.result = result
     }
 
     private func deliver(_ segments: [Data]) {
         for segment in segments {
             segmentCount += 1
-            onSegment?(segment)
+            guard let liveSession else { continue }
+            if liveSession.submit(wavData: segment) == nil {
+                // Warteschlange voll oder Session beendet: Das Audio ist in der WAV-Datei gesichert und
+                // kann nachträglich übertragen werden; das Ergebnis wird als unvollständig markiert.
+                lostSegments += 1
+            }
         }
     }
 
@@ -172,11 +221,10 @@ private final class SampleSink: @unchecked Sendable {
         return (builder.append(samples), nil)
     }
 
-    func finish() -> (fileName: String, rest: Data?) {
+    func finish() -> Data? {
         let rest = builder.flush()
-        let name = writer?.url.lastPathComponent ?? ""
         try? writer?.close()
         writer = nil
-        return (name, rest)
+        return rest
     }
 }

@@ -21,6 +21,18 @@ import Testing
         #expect(WAVEncoder.duration(sampleCount: 40_000) == 2.5)
     }
 
+    @Test func skipsExtraChunksLikeFFmpegList() throws {
+        // RIFF/WAVE, fmt, LIST(4 Bytes), data
+        var data = WAVEncoder.wavData(samples: [5, 6, 7])
+        let payload = data.subdata(in: 36..<data.count)
+        data.removeSubrange(36..<data.count)
+        data.append(contentsOf: Array("LIST".utf8))
+        data.append(contentsOf: [4, 0, 0, 0, 0x49, 0x4E, 0x46, 0x4F])
+        data.append(payload)
+        let samples = try #require(WAVEncoder.samples(from: data))
+        #expect(samples == [5, 6, 7])
+    }
+
     @Test func rejectsForeignFormat() {
         var data = WAVEncoder.wavData(samples: [1, 2, 3])
         data[22] = 2 // zwei Kanäle

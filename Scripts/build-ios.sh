@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Erzeugt das Xcode-Projekt aus ios/project.yml und baut die iOS-App.
-#   zsh Scripts/build-ios.sh            → Simulator-Build ohne Signatur
+#   zsh Scripts/build-ios.sh            → Simulator-Build (Ad-hoc-Signatur, kein Team nötig)
 #   zsh Scripts/build-ios.sh device     → Geräte-Build (braucht ios/Local.xcconfig mit DEVELOPMENT_TEAM)
 set -euo pipefail
 PROJECT_DIR="${0:A:h:h}"
@@ -19,7 +19,6 @@ case "$MODE" in
       -scheme Mitschrift-iOS \
       -destination 'generic/platform=iOS Simulator' \
       -derivedDataPath "$PROJECT_DIR/.build/ios" \
-      CODE_SIGNING_ALLOWED=NO \
       build | grep -E "error|warning: |BUILD" || true
     ;;
   device)

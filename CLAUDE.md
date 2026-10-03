@@ -9,6 +9,8 @@ Native macOS-App (SwiftUI/AppKit) zum lokalen Aufnehmen und Transkribieren mit w
 - `make run` – bauen und starten
 - `make test` – Core-Tests (`Scripts/test-core.sh`; setzt mit reinen Command Line Tools die Suchpfade für swift-testing)
 - `swift build` – nur den Kern bauen
+- Integrationstest gegen einen laufenden Adapter (sonst übersprungen): `MITSCHRIFT_ADAPTER_URL=http://127.0.0.1:8765 MITSCHRIFT_ADAPTER_TOKEN=<token> MITSCHRIFT_TEST_WAV=<16-kHz-WAV> swift test --filter AdapterIntegrationTests`; Testclip z. B. mit `say -v Anna -o clip.aiff "…"` und `ffmpeg -i clip.aiff -ar 16000 -ac 1 -c:a pcm_s16le clip.wav`
+- Simulator mit lokalem Adapter (nur Debug-Build): `SIMCTL_CHILD_MITSCHRIFT_DEV_ENDPOINT=http://127.0.0.1:8765 SIMCTL_CHILD_MITSCHRIFT_DEV_TOKEN=<token> xcrun simctl launch <udid> io.github.zulutwothree.mitschrift.ios`; `http` ist nur für Loopback-Adressen erlaubt
 - `zsh Scripts/build-ios.sh` – iOS-App für den Simulator bauen (XcodeGen + xcodebuild); `… device` für das Gerät, braucht `ios/Local.xcconfig` mit `DEVELOPMENT_TEAM` (Vorlage: `ios/Local.xcconfig.example`)
 - Typecheck wie in CI (`.github/workflows/verify.yml`): `swiftc -typecheck` über `Sources/MitschriftCore/**/*.swift` und `Sources/MitschriftMac/*.swift` mit `-module-name Mitschrift`
 
@@ -36,4 +38,5 @@ macOS 14+, Homebrew mit `whisper.cpp` und `ffmpeg` (`brew install whisper-cpp ff
 - Bei Fehlern wie „PCH was compiled with module cache path …“ nach einem Verschieben des Repos: `rm -rf .build` und neu bauen.
 - Core-Typen sind `public`, weil sie als Package gebaut werden; im macOS-Build landen sie im selben Modul, die iOS-App bindet das Package über XcodeGen ein.
 - iOS-Target baut mit `SWIFT_STRICT_CONCURRENCY=complete`; Audio-Callbacks laufen auf einer eigenen Queue, UI-Zustand nur auf dem Main-Actor.
+- Simulator-Builds müssen ad hoc signiert sein (kein `CODE_SIGNING_ALLOWED=NO`), sonst schlägt der Schlüsselbund mit `errSecMissingEntitlement` fehl.
 - Keine Tailnet-Hostnamen, IP-Adressen oder Tokens ins Repo schreiben (Vorgabe aus Issue #1).

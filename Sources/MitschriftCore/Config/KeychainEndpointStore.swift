@@ -3,8 +3,16 @@ import Security
 
 /// Speichert die Server-URL in `UserDefaults` und den Token im Schlüsselbund.
 public final class KeychainEndpointStore: EndpointStore {
-    public enum Failure: Error, Equatable {
+    public enum Failure: LocalizedError, Equatable {
         case keychain(OSStatus)
+
+        public var errorDescription: String? {
+            switch self {
+            case .keychain(let status):
+                let text = SecCopyErrorMessageString(status, nil) as String? ?? "unbekannt"
+                return "Schlüsselbund-Fehler \(status): \(text)"
+            }
+        }
     }
 
     private let defaults: UserDefaults
