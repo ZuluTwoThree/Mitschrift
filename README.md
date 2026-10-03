@@ -41,3 +41,5 @@ Die App ist eine reine SwiftUI-/AppKit-Anwendung. Sie zeichnet 16-kHz-Mono-WAV a
 ## Entwicklung
 
 Temporäre Build-Artefakte liegen in `.build/`, die fertige App in `dist/`. Beide sowie die Modelle in `Models/` sind von Git ausgeschlossen.
+
+Der plattformneutrale Kern liegt als SwiftPM-Package `MitschriftCore` unter `Sources/MitschriftCore` und wird mit `make test` getestet. Die geplante iOS-Variante mit Live-Transkription über einen privaten Server im Tailnet ist in `docs/planning/` beschrieben.

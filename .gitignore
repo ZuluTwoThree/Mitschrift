@@ -7,6 +7,7 @@ Models/*.bin.*
 /Mitschrift.app/
 /Releases/
 .claude/worktrees/
+.swiftpm/
 ios/*.xcodeproj/
 ios/Local.xcconfig
 ios/Info.plist
