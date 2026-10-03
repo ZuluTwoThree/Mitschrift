@@ -120,9 +120,17 @@ Idempotenz: Der Server speichert die Abschlussantwort. Ein wiederholter `finish`
 
 ## Finalisierungsregel
 
-Der Server hält je Session einen Rollpuffer von höchstens 12 s Audio. Nach jedem Segment transkribiert er den gesamten Puffer. Ein erkanntes Segment gilt als final, wenn sein Ende mindestens 3,0 s vor dem Pufferende liegt. Finalisierte Segmente werden aus dem Puffer entfernt; der Puffer beginnt danach beim ersten nicht finalen Segment. Alles andere wird als `partial` geliefert.
+Der Server hält je Session einen Rollpuffer von höchstens 12 s Audio. Nach jedem Segment transkribiert er den gesamten Puffer. Ein erkanntes Segment gilt als final, wenn sein Ende mindestens 3,0 s vor dem Pufferende liegt **und** eine der folgenden Bedingungen erfüllt ist:
 
-Die Konstanten (Puffer 12 s, Sicherheitsabstand 3 s) sind Serverkonfiguration und können ohne Vertragsänderung angepasst werden.
+- zum nächsten erkannten Segment besteht eine Lücke von mindestens 0,2 s (Sprechpause) oder es gibt kein weiteres Segment,
+- der Text endet mit `.`, `!` oder `?` (Satzende),
+- das Segmentende liegt mindestens 8 s vor dem Pufferende (Zwangsfinalisierung, damit bei durchgehender Rede nichts aus dem Puffer fällt).
+
+Hintergrund: Whisper setzt Segmentgrenzen gelegentlich mitten in ein Wort, wenn das Fenster dort endete. Würde der Server genau dort finalisieren und den Puffer abschneiden, ginge der Wortrest verloren.
+
+Finalisierte Segmente werden aus dem Puffer entfernt. Der Schnitt liegt nicht exakt am Segmentende, sondern an der leisesten 50-ms-Stelle bis zu 0,4 s danach (und vor dem Beginn des nächsten Segments). Alles hinter dem Schnitt wird als `partial` geliefert.
+
+Die Konstanten (Puffer 12 s, Sicherheitsabstand 3 s, Pause 0,2 s, Zwangsfrist 8 s, Suchfenster 0,4 s) sind Serverkonfiguration und können ohne Vertragsänderung angepasst werden.
 
 ## Fehlercodes
 
