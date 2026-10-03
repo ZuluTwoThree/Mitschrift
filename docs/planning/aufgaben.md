@@ -12,7 +12,7 @@ Stand: 2026-10-03. Gegenstück zu `umsetzungsplan.md`: was nur du tun kannst, na
 - [x] Apple-ID in Xcode hinterlegt (Personal Team)
 - [x] iPhone: Entwicklermodus an, Mac vertraut (iPhone 11 Pro Max, iOS 26.6.2)
 - [x] Tailscale auf dem iPhone installiert und angemeldet
-- [ ] Entscheidungen in Abschnitt 3 bestätigt oder geändert
+- [ ] Entscheidungen in Abschnitt 3 bestätigt oder geändert (Gerätetest mit `small` auf dem Mac ist gelaufen)
 - [ ] Hardware-Ausgabe des Linux-Rechners geschickt
 - [ ] SSH-Zugang für Claude entschieden
 - [ ] Tailscale-ACL eingetragen
@@ -101,3 +101,10 @@ Diese Punkte werden erst ab WP5 relevant. Bauen und installieren geht automatisi
 - Einmal über Mobilfunk statt WLAN, Tailscale aktiv.
 - Eine Aufnahme von 60 Minuten, um Speicher und Warteschlange zu beobachten.
 - Von einem Gerät ohne Tailscale versuchen, den Server zu erreichen. Erwartung: keine Verbindung.
+
+## Testprotokoll
+
+| Datum | Gerät | Server | Modell | Netz | Aufnahme | Beobachtung |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-03 | iPhone 11 Pro Max, iOS 26.6.2 | Mac (M3), `tailscale serve` | `small` | WLAN, Tailnet | 27 s, Sprache „Deutsch“ auf englisches Audio | Verbindungstest ok, Segmente alle 200, Latenz 550–810 ms; Text unbrauchbar wegen Sprachwahl |
+| 2026-10-03 | dito | dito | `small` | dito | 56 s, Sprache „Englisch“ | 26 Segmente, `finish` ok; erste ~5 s fehlten durch Pufferüberlauf (behoben in PR #8); Replay mit Fix fast deckungsgleich mit Offline-Referenz |
