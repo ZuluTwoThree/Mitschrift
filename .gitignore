@@ -6,3 +6,7 @@ Models/*.bin.*
 *.swp
 /Mitschrift.app/
 /Releases/
+.claude/worktrees/
+ios/*.xcodeproj/
+ios/Local.xcconfig
+ios/Info.plist

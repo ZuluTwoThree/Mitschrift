@@ -90,6 +90,7 @@ Bedeutung der Felder:
 - `final`: Segmente, die in dieser Antwort **neu** finalisiert wurden. Die App hängt sie an ihre Liste finaler Segmente an. Ein finales Segment wird nie erneut geliefert und nie geändert.
 - `partial`: Der vollständige aktuelle Stand des noch nicht finalisierten Bereichs. Die App **ersetzt** ihre Partial-Liste komplett. Die Liste darf leer sein.
 - Zeiten beziehen sich auf die Sessionzeitachse. Sie werden aus Sequenznummer, Segmentlänge und Überlappung berechnet, nicht aus `X-Mitschrift-Captured-At`.
+- Daraus folgt: Die App sendet das Audio einer Session **lückenlos**. Eine clientseitige Sprachaktivitätserkennung darf Segmente nicht auslassen, sondern höchstens durch Stille gleicher Länge ersetzen. Pausen durch Unterbrechungen (Anruf, Siri) werden nicht herausgeschnitten; die Aufnahme pausiert währenddessen auch lokal, die Zeitachse der Session entspricht also der gespeicherten Aufnahme. Ein ausgelassenes Segment führt zu 409 (Sequenzlücke).
 - `diagnostics` ist optional und enthält keine Inhalte.
 
 Idempotenz: Ein Segment mit bereits verarbeiteter `sequence` liefert die gespeicherte Antwort von damals mit HTTP 200. Ein Segment mit einer Sequenznummer, die mehr als 1 über der letzten liegt, wird mit 409 abgelehnt; die App muss Segmente in Reihenfolge senden.
@@ -113,7 +114,9 @@ Antwort 200:
 }
 ```
 
-`final` enthält nur die in diesem Schritt neu finalisierten Segmente. `partial` ist immer leer. Ein zweiter `finish`-Aufruf derselben Session liefert 200 mit leeren Listen und derselben `lastSequence`.
+`final` enthält nur die in diesem Schritt neu finalisierten Segmente. `partial` ist immer leer.
+
+Idempotenz: Der Server speichert die Abschlussantwort. Ein wiederholter `finish`-Aufruf derselben Session liefert **dieselbe Antwort** erneut (gleiche `final`-Liste, gleiche `lastSequence`), solange die Session noch im Speicher ist (mindestens bis zum Ablauf des Session-Timeouts nach dem Abschluss). So geht bei einem Verbindungsabbruch zwischen Verarbeitung und Antwort kein Text verloren: Die App wiederholt `finish` bei Netzfehlern, 429 und 5xx mit Backoff und übernimmt die finalen Segmente erst aus der erfolgreichen Antwort. Wer `finish` zweimal erfolgreich erhält, darf die `final`-Segmente nicht doppelt anhängen; die App hängt nur an, was sie noch nicht hat (die Antwort ist identisch, also einfach die erste erfolgreiche verwenden).
 
 ## Finalisierungsregel
 
@@ -140,6 +143,8 @@ Die Konstanten (Puffer 12 s, Sicherheitsabstand 3 s, Pause 0,2 s, Zwangsfrist 8 
 | 413 | Segment größer als 1 MiB | Segment verwerfen, Fehler protokollieren |
 | 429 | Zu viele Sessions oder Anfragen | Mit Backoff erneut senden, Hinweis „Server ausgelastet“ |
 | 503 | Modell lädt oder `whisper-server` nicht erreichbar | Mit Backoff erneut senden, Hinweis „Server startet“ |
+| andere 5xx | Serverfehler, Proxy | Mit Backoff erneut senden |
+| andere 4xx | Fehlkonfiguration (z. B. 403, 405, 422 durch Proxy oder falsche URL) | Session beenden, nicht wiederholen, Einstellungen prüfen lassen |
 
 Fehlerantworten tragen einen JSON-Body `{ "error": "<code>", "message": "<kurzer Text>" }`. Der `message`-Text enthält nie Audio- oder Transkriptinhalt.
 
