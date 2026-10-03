@@ -77,7 +77,13 @@ public final class LiveTranscriptionSession: ObservableObject {
         return segment.sequence
     }
 
+    /// Höchstzahl der `finish`-Versuche bei wiederholbaren Fehlern (Netz, 429, 5xx).
+    public static let finishAttempts = 5
+
     /// Wartet, bis alle Segmente bestätigt sind, und schließt die Sitzung auf dem Server.
+    ///
+    /// Der Server liefert bei wiederholtem `finish` dieselbe Antwort (Vertrag), deshalb darf bei
+    /// Netzfehlern wiederholt werden, ohne finale Segmente zu verlieren oder zu verdoppeln.
     public func finish() async {
         guard isActive else { return }
         finishRequested = true
@@ -85,18 +91,29 @@ public final class LiveTranscriptionSession: ObservableObject {
         pump()
         await drainTask?.value
         guard case .finishing = status else { return }
-        do {
-            let response = try await transport.finish(sessionId: sessionId)
-            transcript.apply(response)
-            status = .finished
-        } catch let error as LiveTranscriptionError {
-            if case .sessionNotFound = error {
+        var attempt = 0
+        while true {
+            attempt += 1
+            do {
+                let response = try await transport.finish(sessionId: sessionId)
+                transcript.apply(response)
                 status = .finished
-            } else {
-                status = .failed(error.userMessage)
+                return
+            } catch {
+                let failure = (error as? LiveTranscriptionError) ?? .transport(error.localizedDescription)
+                if case .sessionNotFound = failure {
+                    status = .finished
+                    return
+                }
+                if failure.isRetryable, attempt < Self.finishAttempts, !Task.isCancelled {
+                    status = .waiting(failure.userMessage)
+                    await sleeper(backoff.delay(forAttempt: attempt))
+                    status = .finishing
+                    continue
+                }
+                status = .failed(failure.userMessage)
+                return
             }
-        } catch {
-            status = .failed(LiveTranscriptionError.transport(error.localizedDescription).userMessage)
         }
     }
 

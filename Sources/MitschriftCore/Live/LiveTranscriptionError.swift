@@ -10,6 +10,7 @@ public enum LiveTranscriptionError: Error, Equatable, Sendable {
     case overloaded                   // 429
     case unavailable                  // 503
     case server(status: Int)          // sonstige 5xx
+    case clientError(status: Int)     // sonstige 4xx: Fehlkonfiguration, nicht wiederholen
     case transport(String)            // URLSession-Fehler, Timeout, kein Netz
     case invalidResponse              // JSON nicht lesbar
     case notConfigured                // kein Endpunkt hinterlegt
@@ -23,7 +24,8 @@ public enum LiveTranscriptionError: Error, Equatable, Sendable {
         case 413: self = .payloadTooLarge
         case 429: self = .overloaded
         case 503: self = .unavailable
-        default: self = .server(status: status)
+        case 500...599: self = .server(status: status)
+        default: self = .clientError(status: status)
         }
     }
 
@@ -46,7 +48,7 @@ public enum LiveTranscriptionError: Error, Equatable, Sendable {
     /// Beendet die Live-Session; weitere Segmente brauchen eine neue Session.
     public var endsSession: Bool {
         switch self {
-        case .unauthorized, .sessionNotFound, .sessionConflict, .notConfigured, .invalidResponse: return true
+        case .unauthorized, .sessionNotFound, .sessionConflict, .notConfigured, .invalidResponse, .clientError: return true
         default: return false
         }
     }
@@ -62,6 +64,7 @@ public enum LiveTranscriptionError: Error, Equatable, Sendable {
         case .overloaded: return "Der Server ist ausgelastet. Es wird später erneut versucht."
         case .unavailable: return "Der Server startet noch oder ist vorübergehend nicht erreichbar."
         case .server(let status): return "Serverfehler (\(status)). Es wird erneut versucht."
+        case .clientError(let status): return "Der Server hat die Anfrage abgelehnt (\(status)). Bitte Adresse und Einstellungen prüfen."
         case .transport: return "Keine Verbindung zum Server. Ist Tailscale verbunden?"
         case .invalidResponse: return "Die Antwort des Servers war nicht lesbar."
         case .notConfigured: return "Es ist kein Server eingerichtet."
