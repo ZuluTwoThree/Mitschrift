@@ -184,6 +184,28 @@ async def test_overflow_rule_does_not_fire_in_small_window(whisper: FakeWhisper)
     assert final == [] and len(partial) == 1
 
 
+async def test_final_text_is_passed_as_prompt_when_enabled(whisper: FakeWhisper) -> None:
+    """Mit prompt_max_chars > 0 bekommt Whisper finalen Text als Prompt für die nächsten Fenster."""
+    from asr_adapter.sessions import SessionStore
+
+    store = SessionStore(make_settings(prompt_max_chars=200), whisper)
+    for seq in range(4):
+        await store.handle_segment("s", seq, "de", np.zeros(int(2.5 * SAMPLE_RATE), dtype="<i2"))
+    assert whisper.prompts[0] is None, "Erstes Fenster ohne Kontext"
+    assert any(p and p.startswith("s0.") for p in whisper.prompts), whisper.prompts
+    await store.finish("s")
+    assert whisper.prompts[-1], "Auch der Abschluss bekommt den Kontext"
+
+
+async def test_prompt_is_off_by_default(whisper: FakeWhisper) -> None:
+    from asr_adapter.sessions import SessionStore
+
+    store = SessionStore(make_settings(), whisper)
+    for seq in range(4):
+        await store.handle_segment("s", seq, "de", np.zeros(int(2.5 * SAMPLE_RATE), dtype="<i2"))
+    assert all(p is None for p in whisper.prompts), whisper.prompts
+
+
 async def test_cut_moves_into_silence_after_final(whisper: FakeWhisper) -> None:
     """Nach einem finalen Segment wird der Puffer an der leisesten Stelle kurz dahinter geschnitten."""
     from asr_adapter.sessions import Session

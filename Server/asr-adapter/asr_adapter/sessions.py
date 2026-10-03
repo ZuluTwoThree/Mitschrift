@@ -42,6 +42,8 @@ class Session:
     timeline_end: float = 0.0
     # Dedup: gespeicherte Antwort je sequence
     responses: dict[int, dict[str, Any]] = field(default_factory=dict)
+    # Zuletzt finalisierter Text (gekürzt), als Prompt für das nächste Fenster
+    recent_final_text: str = ""
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     inflight: int = 0
 
@@ -105,6 +107,7 @@ class Session:
             if accept:
                 final.append(_segment_json(abs_start, abs_end, segment.text))
                 last_final_end_rel = segment.end
+                self._remember_final_text(segment.text)
             else:
                 if not partial:
                     next_partial_start_rel = segment.start
@@ -118,6 +121,14 @@ class Session:
             self.buffer = self.buffer[cut:]
             self.buffer_start += cut / settings.sample_rate
         return final, partial
+
+    def _remember_final_text(self, text: str) -> None:
+        """Merkt sich die letzten `prompt_max_chars` Zeichen finalen Texts; 0 schaltet den Prompt ab."""
+        limit = self.settings.prompt_max_chars
+        if limit <= 0:
+            self.recent_final_text = ""
+            return
+        self.recent_final_text = (self.recent_final_text + " " + text.strip())[-limit:].strip()
 
     def _quiet_cut(self, end_rel: float, limit_rel: float | None) -> float:
         """Leiseste 50-ms-Stelle zwischen `end_rel` und `end_rel + cut_search_seconds` (vor `limit_rel`)."""
@@ -195,7 +206,7 @@ class SessionStore:
         window_start, window_end = session.buffer_start, session.buffer_end
         started = time.perf_counter()
         try:
-            raw = await self._transcriber.transcribe(session.buffer, session.language)
+            raw = await self._transcriber.transcribe(session.buffer, session.language, prompt=session.recent_final_text or None)
         except Exception:
             session.buffer, session.buffer_start, session.timeline_end = snapshot
             raise
@@ -239,7 +250,7 @@ class SessionStore:
         final: list[dict[str, Any]] = []
         min_samples = int(0.1 * self._settings.sample_rate)
         if len(session.buffer) > min_samples:
-            raw = await self._transcriber.transcribe(session.buffer, session.language)
+            raw = await self._transcriber.transcribe(session.buffer, session.language, prompt=session.recent_final_text or None)
             final, _ = session.split(raw, finalize_all=True)
         else:
             session.split([], finalize_all=True)

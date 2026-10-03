@@ -29,6 +29,8 @@ MODEL=../../Models/ggml-small.bin ./run.sh
 | `THREADS` | `4` | Threads für whisper.cpp |
 | `HOST` / `PORT` | `127.0.0.1` / `8765` | Adresse des Adapters |
 | `WHISPER_PORT` | `8080` | Port von `whisper-server` |
+| `FINALIZE_MIN_GAP_SECONDS` / `FINALIZE_FORCE_SECONDS` | `0.2` / `8.0` | Finalisierung nur an Pausen, Satzenden oder nach Zwangsfrist; dazu Überlaufschutz ab 7 s vor Pufferende |
+| `PROMPT_MAX_CHARS` | `0` | Zuletzt finalisierten Text als Whisper-Prompt mitgeben. Aus, weil es in der Messung die Wortfehlerrate verschlechterte (13,3 % → 19,5 % gegenüber Offline-Transkription) |
 | `WINDOW_SECONDS` | `12` | Rollpuffer je Session |
 | `FINALIZE_MARGIN_SECONDS` | `3` | Abstand zum Pufferende, ab dem Segmente final sind |
 | `MAX_SESSIONS` | `4` | Parallele Sessions |
