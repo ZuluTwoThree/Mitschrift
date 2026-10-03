@@ -25,28 +25,38 @@ final class FileTranscriptionTask: ObservableObject {
         var builder = SegmentBuilder()
         let chunk = WAVEncoder.sampleRate // 1 s pro Durchlauf, damit die Anzeige mitkommt
         var offset = 0
-        while offset < samples.count {
+        var submittedAll = true
+        while offset < samples.count, session.isActive {
             let end = min(offset + chunk, samples.count)
             for segment in builder.append(Array(samples[offset..<end])) {
-                // Warteschlange begrenzt: warten, bis wieder Platz ist.
-                while session.submit(wavData: segment) == nil, session.isActive {
-                    try? await Task.sleep(nanoseconds: 200_000_000)
-                }
-                guard session.isActive else { break }
+                guard await submitWaitingForRoom(segment, session: session) else { submittedAll = false; break }
             }
             offset = end
             progress = Double(offset) / Double(samples.count)
-            guard session.isActive else { break }
         }
-        if let rest = builder.flush() {
-            session.submit(wavData: rest)
+        // Das letzte, kürzere Segment genauso behandeln wie alle anderen: auf Platz warten statt verwerfen.
+        if submittedAll, let rest = builder.flush() {
+            submittedAll = await submitWaitingForRoom(rest, session: session)
         }
         await session.finish()
         if case .failed(let message) = session.status {
             error = message
             return nil
         }
+        guard submittedAll, session.droppedCount == 0 else {
+            error = "Nicht alle Abschnitte konnten übertragen werden. Bitte später erneut versuchen."
+            return nil
+        }
         progress = 1
         return session.transcript
+    }
+
+    /// Reiht ein Segment ein und wartet bei voller Warteschlange. `false`, wenn die Session vorher endet.
+    private func submitWaitingForRoom(_ segment: Data, session: LiveTranscriptionSession) async -> Bool {
+        while session.isActive {
+            if session.submit(wavData: segment) != nil { return true }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+        return false
     }
 }

@@ -151,6 +151,13 @@ struct RecordView: View {
 /// Ergebnis nach dem Stoppen: Text, Hinweis auf Lücken, Export, nachträgliche Übertragung.
 private struct ResultView: View {
     var result: RecordingController.Result
+
+    private var incompleteText: String {
+        if result.missingSegments > 0 {
+            return "Die Live-Übertragung war unvollständig: \(result.missingSegments) Abschnitt(e) fehlen. Die Aufnahme ist lokal gesichert."
+        }
+        return "Die Live-Übertragung war unvollständig. Die Aufnahme ist lokal gesichert."
+    }
     var retrying: Bool
     var retryProgress: Double
     var retryError: String?
@@ -160,7 +167,7 @@ private struct ResultView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if result.liveIncomplete {
-                Label("Die Live-Übertragung war unvollständig. Die Aufnahme ist lokal gesichert.", systemImage: "exclamationmark.triangle.fill")
+                Label(incompleteText, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
                     .foregroundStyle(.orange)
             }

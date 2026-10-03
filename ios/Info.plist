@@ -22,6 +22,11 @@
 	<string>1</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Mitschrift benötigt das Mikrofon, um Gespräche aufzuzeichnen. Audio wird nur an deinen eigenen Server im privaten Tailnet gesendet.</string>
 	<key>UIBackgroundModes</key>

@@ -13,21 +13,25 @@
 		610A29C014856C8B430FA3DC /* RecordView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F37FAC1AA9DE449A82C18A8 /* RecordView.swift */; };
 		717DA919CB26E63C1CD99834 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55AC110165C83717E0C341A /* SettingsStore.swift */; };
 		7191A6E551279D86937FCCBA /* MitschriftIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5975B3306DFCB2CC7384FFD /* MitschriftIOSApp.swift */; };
+		883AE25CC286BFEC0E0922AF /* LiveTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 889C3CBF3E13AF9C35968CF7 /* LiveTranscriptView.swift */; };
+		A5053DEE72A4741AC779FA68 /* FileTranscriptionTask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1313B9BFC1F13DBEF0613037 /* FileTranscriptionTask.swift */; };
 		A7DCB440DA2DA718BF79AF39 /* AudioCaptureEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59CE7F0CC95470ECBD520C49 /* AudioCaptureEngine.swift */; };
 		C74E0D02E4C49D22A8340170 /* MitschriftCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4B5B12DFD068ADE0DF139FAD /* MitschriftCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		017816B42429572535E4839D /* RecordingController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingController.swift; sourceTree = "<group>"; };
+		1313B9BFC1F13DBEF0613037 /* FileTranscriptionTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTranscriptionTask.swift; sourceTree = "<group>"; };
 		4C59E685E29DB91A78F6977E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		59CE7F0CC95470ECBD520C49 /* AudioCaptureEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureEngine.swift; sourceTree = "<group>"; };
 		7F37FAC1AA9DE449A82C18A8 /* RecordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordView.swift; sourceTree = "<group>"; };
+		889C3CBF3E13AF9C35968CF7 /* LiveTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTranscriptView.swift; sourceTree = "<group>"; };
 		A55AC110165C83717E0C341A /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		C7FB3E03FA673D33582E8FE9 /* Mitschrift-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Mitschrift-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8982C6956FDC3DA79F834D4 /* PrivacyNoticeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyNoticeView.swift; sourceTree = "<group>"; };
 		E5975B3306DFCB2CC7384FFD /* MitschriftIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MitschriftIOSApp.swift; sourceTree = "<group>"; };
 		FD3DFC1B7F6C82B78EDA815C /* Mitschrift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Mitschrift; path = ..; sourceTree = SOURCE_ROOT; };
-		"TEMP_6DB61F69-34F3-4A84-BE59-28242F86F750" /* Local.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Local.xcconfig; sourceTree = "<group>"; };
+		"TEMP_88D34AD9-E5D8-4E47-9205-B1B20A29E576" /* Local.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Local.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,6 +57,7 @@
 		303272CCCE889D3E5B82E420 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				889C3CBF3E13AF9C35968CF7 /* LiveTranscriptView.swift */,
 				C8982C6956FDC3DA79F834D4 /* PrivacyNoticeView.swift */,
 				7F37FAC1AA9DE449A82C18A8 /* RecordView.swift */,
 			);
@@ -107,6 +112,7 @@
 		B609854EB96EC712E3E08BA3 /* Recording */ = {
 			isa = PBXGroup;
 			children = (
+				1313B9BFC1F13DBEF0613037 /* FileTranscriptionTask.swift */,
 				017816B42429572535E4839D /* RecordingController.swift */,
 			);
 			path = Recording;
@@ -130,10 +136,10 @@
 			);
 			sourceTree = "<group>";
 		};
-		"TEMP_2691ADB6-E6B3-41E6-B89D-2C4CEDE7B772" /* ios */ = {
+		"TEMP_829512E1-075C-49C3-A0A2-E9877DBEB2A0" /* ios */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_6DB61F69-34F3-4A84-BE59-28242F86F750" /* Local.xcconfig */,
+				"TEMP_88D34AD9-E5D8-4E47-9205-B1B20A29E576" /* Local.xcconfig */,
 			);
 			path = ios;
 			sourceTree = "<group>";
@@ -202,6 +208,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A7DCB440DA2DA718BF79AF39 /* AudioCaptureEngine.swift in Sources */,
+				A5053DEE72A4741AC779FA68 /* FileTranscriptionTask.swift in Sources */,
+				883AE25CC286BFEC0E0922AF /* LiveTranscriptView.swift in Sources */,
 				7191A6E551279D86937FCCBA /* MitschriftIOSApp.swift in Sources */,
 				3BFF20F20C84D56936BB021C /* PrivacyNoticeView.swift in Sources */,
 				610A29C014856C8B430FA3DC /* RecordView.swift in Sources */,
@@ -256,7 +264,7 @@
 		};
 		9544593DBAD3DE6E0FA87102 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_6DB61F69-34F3-4A84-BE59-28242F86F750" /* Local.xcconfig */;
+			baseConfigurationReference = "TEMP_88D34AD9-E5D8-4E47-9205-B1B20A29E576" /* Local.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -313,7 +321,7 @@
 		};
 		B3A4657EE548AD83472E17E5 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_6DB61F69-34F3-4A84-BE59-28242F86F750" /* Local.xcconfig */;
+			baseConfigurationReference = "TEMP_88D34AD9-E5D8-4E47-9205-B1B20A29E576" /* Local.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;

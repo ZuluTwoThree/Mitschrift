@@ -22,6 +22,8 @@ final class RecordingController: ObservableObject {
         var transcriptURL: URL?
         var transcript: Transcript
         var liveIncomplete: Bool
+        /// Segmente, die lokal nicht eingereiht oder vom Server abgelehnt wurden.
+        var missingSegments: Int = 0
     }
 
     @Published private(set) var state: State = .idle
@@ -30,6 +32,8 @@ final class RecordingController: ObservableObject {
     @Published private(set) var permissionDenied = false
     @Published private(set) var liveSession: LiveTranscriptionSession?
     @Published private(set) var result: Result?
+    /// Segmente, die wegen voller Warteschlange nicht eingereiht werden konnten. Audio bleibt in der Datei.
+    @Published private(set) var lostSegments = 0
 
     var elapsedText: String { RecordingNaming.elapsedText(elapsed) }
 
@@ -94,6 +98,7 @@ final class RecordingController: ObservableObject {
             audioURL = url
             result = nil
             segmentCount = 0
+            lostSegments = 0
             elapsed = 0
             liveSession = endpoint.map { endpoint in
                 LiveTranscriptionSession(transport: URLSessionLiveTransport(endpoint: endpoint), language: language)
@@ -132,7 +137,10 @@ final class RecordingController: ObservableObject {
         if let session = liveSession {
             await session.finish()
             transcript = session.transcript
+            // Unvollständig, wenn die Session nicht sauber endete, Segmente lokal verworfen wurden
+            // (Warteschlange voll) oder der Server einzelne Segmente abgelehnt hat (400/413).
             if case .finished = session.status {} else { incomplete = true }
+            if lostSegments > 0 || session.droppedCount > 0 { incomplete = true }
         }
 
         guard let audioURL else {
@@ -150,7 +158,8 @@ final class RecordingController: ObservableObject {
                 incomplete = true
             }
         }
-        result = Result(audioURL: audioURL, transcriptURL: transcriptURL, transcript: transcript, liveIncomplete: incomplete)
+        let missing = lostSegments + (liveSession?.droppedCount ?? 0)
+        result = Result(audioURL: audioURL, transcriptURL: transcriptURL, transcript: transcript, liveIncomplete: incomplete, missingSegments: missing)
         state = .finished
     }
 
@@ -162,7 +171,12 @@ final class RecordingController: ObservableObject {
     private func deliver(_ segments: [Data]) {
         for segment in segments {
             segmentCount += 1
-            liveSession?.submit(wavData: segment)
+            guard let liveSession else { continue }
+            if liveSession.submit(wavData: segment) == nil {
+                // Warteschlange voll oder Session beendet: Das Audio ist in der WAV-Datei gesichert und
+                // kann nachträglich übertragen werden; das Ergebnis wird als unvollständig markiert.
+                lostSegments += 1
+            }
         }
     }
 
