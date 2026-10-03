@@ -178,10 +178,17 @@ class SessionStore:
             await self._finish_locked(session)
             raise SessionError(409, "session_finished", "Maximale Sessiondauer erreicht.")
 
+        # Zustand sichern: Schlägt die Inferenz fehl (503, Client wiederholt), darf das Audio nicht
+        # doppelt im Puffer landen.
+        snapshot = (session.buffer, session.buffer_start, session.timeline_end)
         session.append(samples, sequence)
         window_start, window_end = session.buffer_start, session.buffer_end
         started = time.perf_counter()
-        raw = await self._transcriber.transcribe(session.buffer, session.language)
+        try:
+            raw = await self._transcriber.transcribe(session.buffer, session.language)
+        except Exception:
+            session.buffer, session.buffer_start, session.timeline_end = snapshot
+            raise
         elapsed = time.perf_counter() - started
         final, partial = session.split(raw, finalize_all=False)
 
@@ -234,11 +241,10 @@ class SessionStore:
             "final": final,
             "partial": [],
         }
-        # Erst beim zweiten finish darf nichts mehr geliefert werden.
-        response = dict(session.finish_response)
-        session.finish_response = {**session.finish_response, "final": []}
+        # Wiederholte finish-Aufrufe liefern dieselbe Antwort (Vertrag: Replay, damit bei verlorener
+        # Antwort keine finalen Segmente verloren gehen).
         log.info("session=%s finish lastSequence=%d final=%d", session.session_id, session.last_sequence, len(final))
-        return response
+        return session.finish_response
 
     async def sweep(self) -> int:
         """Beendet inaktive Sessions und entfernt beendete nach Ablauf des Timeouts."""
@@ -253,7 +259,13 @@ class SessionStore:
             async with session.lock:
                 if not session.finished:
                     log.info("session=%s timeout", session.session_id)
-                    await self._finish_locked(session)
+                    try:
+                        await self._finish_locked(session)
+                    except Exception:  # noqa: BLE001
+                        # Abschluss-Inferenz fehlgeschlagen: Session trotzdem freigeben, sonst bleiben
+                        # die Slots bei Whisper-Ausfall dauerhaft belegt.
+                        log.warning("session=%s timeout ohne Abschluss-Transkription", session.session_id)
+                        session.finished = True
                 async with self._lock:
                     self._sessions.pop(session.session_id, None)
                 removed += 1

@@ -10,7 +10,7 @@ import pytest
 from asr_adapter.app import create_app
 from asr_adapter.config import Settings
 from asr_adapter.wav import SAMPLE_RATE, write_wav
-from asr_adapter.whisper_client import RawSegment
+from asr_adapter.whisper_client import RawSegment, TranscriberError
 
 TOKEN = "test-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -28,9 +28,13 @@ class FakeWhisper:
     durations: list[float] = field(default_factory=list)
     healthy: bool = True
     punctuate: bool = True
+    fail_next: int = 0
 
     async def transcribe(self, samples: np.ndarray, language: str) -> list[RawSegment]:
         self.calls += 1
+        if self.fail_next > 0:
+            self.fail_next -= 1
+            raise TranscriberError("simulierter Ausfall")
         seconds = len(samples) / SAMPLE_RATE
         self.durations.append(seconds)
         suffix = "." if self.punctuate else ""

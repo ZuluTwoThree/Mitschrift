@@ -26,7 +26,18 @@ export WHISPER_URL="http://127.0.0.1:$WHISPER_PORT"
 
 "$WHISPER_BIN" --host 127.0.0.1 --port "$WHISPER_PORT" -m "$MODEL" -l "$LANGUAGE" -t "$THREADS" &
 WHISPER_PID=$!
-trap 'kill "$WHISPER_PID" 2>/dev/null || true' EXIT INT TERM
 
 cd "$SCRIPT_DIR"
-exec uv run uvicorn asr_adapter.app:app --host "$HOST" --port "$PORT"
+uv run uvicorn asr_adapter.app:app --host "$HOST" --port "$PORT" &
+ADAPTER_PID=$!
+
+# Die Shell bleibt als Aufseher am Leben: Endet oder stirbt einer der beiden Prozesse, wird der andere
+# mit beendet, damit kein verwaister whisper-server den Port 8080 belegt.
+cleanup() {
+  kill "$ADAPTER_PID" "$WHISPER_PID" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+wait "$ADAPTER_PID"
+STATUS=$?
+exit "$STATUS"

@@ -189,11 +189,36 @@ async def test_finish_returns_rest_and_is_idempotent(client: httpx.AsyncClient, 
 
     again = await client.post(f"/v1/live-transcriptions/{session_id}/finish", headers=AUTH)
     assert again.status_code == 200
-    assert again.json() == {"sessionId": session_id, "lastSequence": 1, "final": [], "partial": []}
+    assert again.json() == body, "Wiederholtes finish liefert dieselbe Antwort (Replay)"
 
     # Weitere Segmente an eine beendete Session
     r = await post_segment(client, session_id, 2)
     assert r.status_code == 409 and r.json()["error"] == "session_finished"
+
+
+async def test_failed_inference_rolls_back_buffer(client: httpx.AsyncClient, whisper: FakeWhisper, session_id: str) -> None:
+    """503 bei Inferenzfehler; die Wiederholung derselben Sequenz darf das Audio nicht doppelt anhängen."""
+    assert (await post_segment(client, session_id, 0)).status_code == 200
+    whisper.fail_next = 1
+    r = await post_segment(client, session_id, 1)
+    assert r.status_code == 503 and r.json()["error"] == "asr_unavailable"
+    r = await post_segment(client, session_id, 1)
+    assert r.status_code == 200
+    assert r.json()["windowEnd"] == pytest.approx(4.7, abs=0.01), "Zeitachse 2.5 + 2.2, nicht 2.5 + 2.2 + 2.2"
+
+
+async def test_sweep_releases_session_when_whisper_down(whisper: FakeWhisper) -> None:
+    from asr_adapter.sessions import SessionStore
+    from conftest import SAMPLE_RATE as rate
+
+    clock = {"t": 0.0}
+    store = SessionStore(make_settings(session_idle_timeout_seconds=1.0), whisper, now=lambda: clock["t"])
+    await store.handle_segment("s1", 0, "de", np.zeros(int(2.5 * rate), dtype="<i2"))
+    whisper.fail_next = 10
+    clock["t"] = 5.0
+    removed = await store.sweep()
+    assert removed == 1
+    assert store.active_count == 0
 
 
 async def test_finish_unknown_session(client: httpx.AsyncClient) -> None:
