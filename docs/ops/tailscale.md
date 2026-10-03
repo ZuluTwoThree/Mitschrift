@@ -34,21 +34,20 @@ In der Admin-Konsole unter Access Controls. Der Ausschnitt ergänzt eine bestehe
     "tag:asr": ["autogroup:admin"]
   },
   "acls": [
-    // Eigene Geräte dürfen den ASR-Dienst auf Port 443 erreichen.
-    { "action": "accept", "src": ["autogroup:member"], "dst": ["tag:asr:443"] },
+    // Nur die Geräte des eigenen Logins dürfen den ASR-Dienst auf Port 443 erreichen.
+    // <dein-login> ist die Tailscale-Identität, z. B. die Anmelde-E-Mail; sie gehört nicht ins Repo.
+    { "action": "accept", "src": ["<dein-login>"], "dst": ["tag:asr:443"] },
     // Admin-Zugang per SSH auf den Server, falls gewünscht.
-    { "action": "accept", "src": ["autogroup:admin"], "dst": ["tag:asr:22"] }
-  ],
-  "nodeAttrs": [
-    // Erlaubt dem Server, Zertifikate für HTTPS auszustellen.
-    { "target": ["tag:asr"], "attr": ["funnel"] }
+    { "action": "accept", "src": ["<dein-login>"], "dst": ["tag:asr:22"] }
   ]
 }
 ```
 
-Hinweis zu `nodeAttrs`: Das Attribut `funnel` ist für `tailscale cert` nicht nötig; für HTTPS reicht die Option „HTTPS Certificates“ unter DNS. Den `nodeAttrs`-Block nur einfügen, wenn Tailscale ihn verlangt, und Funnel selbst nie aktivieren.
+Nicht `autogroup:member` als Quelle verwenden: Das umfasst alle Nutzer des Tailnets, in einem geteilten Tailnet also auch fremde. Bei mehreren eigenen Logins stattdessen eine Gruppe unter `groups` anlegen und diese als `src` eintragen.
 
-Prüfen in der Admin-Konsole unter Access Controls → Preview: Ein eigenes Gerät erreicht `tag:asr:443`, ein fremder Nutzer nicht.
+Kein `nodeAttrs`-Eintrag mit `funnel`: Private HTTPS-Zertifikate über `tailscale serve` und die Option „HTTPS Certificates“ brauchen dieses Attribut nicht. Es würde dem Server erlauben, Dienste öffentlich zu veröffentlichen.
+
+Prüfen in der Admin-Konsole unter Access Controls → Preview: Ein eigenes Gerät erreicht `tag:asr:443`, ein anderer Nutzer des Tailnets nicht.
 
 ## 3. HTTPS per `tailscale serve`
 
