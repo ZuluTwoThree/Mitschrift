@@ -70,10 +70,16 @@ class Session:
         Pause oder einem Satzende endet; andernfalls erst, wenn es `finalize_force_seconds` zurückliegt.
         Der Puffer wird dann an der leisesten Stelle kurz hinter dem Segmentende geschnitten, damit kein
         angeschnittenes Wort in das nächste Fenster wandert.
+
+        Überlaufschutz: Audio, das beim nächsten Segment vorn aus dem Fenster fallen würde, darf nicht
+        nur vorläufig gewesen sein. Deshalb wird jedes Segment, dessen Anfang in diesem Bereich liegt,
+        finalisiert, notfalls auch ohne Pause und innerhalb des Sicherheitsabstands.
         """
         settings = self.settings
         cutoff = self.buffer_end if finalize_all else self.buffer_end - settings.finalize_margin_seconds
         force_before = self.buffer_end - settings.finalize_force_seconds
+        # Alles, was vor dieser Marke beginnt, würde beim nächsten Segment aus dem Fenster fallen.
+        overflow_before = self.buffer_end - (settings.window_seconds - settings.max_segment_seconds)
         ordered = sorted(raw, key=lambda s: s.start)
         final: list[dict[str, Any]] = []
         partial: list[dict[str, Any]] = []
@@ -84,7 +90,11 @@ class Session:
             abs_end = self.buffer_start + segment.end
             if finalize_all:
                 accept = True
-            elif partial or abs_end > cutoff:
+            elif partial:
+                accept = False
+            elif abs_start <= overflow_before:
+                accept = True  # Überlaufschutz: sonst ginge dieser Text verloren
+            elif abs_end > cutoff:
                 accept = False
             else:
                 next_start = ordered[index + 1].start if index + 1 < len(ordered) else None
