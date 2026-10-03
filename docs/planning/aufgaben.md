@@ -108,3 +108,7 @@ Diese Punkte werden erst ab WP5 relevant. Bauen und installieren geht automatisi
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-10-03 | iPhone 11 Pro Max, iOS 26.6.2 | Mac (M3), `tailscale serve` | `small` | WLAN, Tailnet | 27 s, Sprache „Deutsch“ auf englisches Audio | Verbindungstest ok, Segmente alle 200, Latenz 550–810 ms; Text unbrauchbar wegen Sprachwahl |
 | 2026-10-03 | dito | dito | `small` | dito | 56 s, Sprache „Englisch“ | 26 Segmente, `finish` ok; erste ~5 s fehlten durch Pufferüberlauf (behoben in PR #8); Replay mit Fix fast deckungsgleich mit Offline-Referenz |
+| 2026-10-03 | dito | dito | `small` | dito | 19 s, Sprache „Englisch“ auf deutsches Audio | erwartungsgemäß unbrauchbar |
+| 2026-10-03 | dito | dito | `small` | dito | 48 s, Sprache „Deutsch“, Video mit Hintergrundmusik | 22 Segmente, `finish` ok; Anfang als `[Musik]` verworfen (WER 37,6 %). Mit `whisper-server -sns -bs 5` im Replay 10,9 % (jetzt Standard in `run.sh`) |
+
+Offen für den neuen Server mit mehr RAM: Live-Vergleich mit `large-v3-turbo` (q5_0 liegt unter `Models/`, Download-URL in `Scripts/download-models.sh` ergänzen), danach Modellentscheidung.

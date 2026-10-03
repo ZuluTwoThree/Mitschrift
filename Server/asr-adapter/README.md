@@ -29,6 +29,7 @@ MODEL=../../Models/ggml-small.bin ./run.sh
 | `THREADS` | `4` | Threads für whisper.cpp |
 | `HOST` / `PORT` | `127.0.0.1` / `8765` | Adresse des Adapters |
 | `WHISPER_PORT` | `8080` | Port von `whisper-server` |
+| `WHISPER_ARGS` | `-sns -bs 5` | Optionen für `whisper-server`: Nicht-Sprache-Tokens unterdrücken (sonst liefert `small` bei Hintergrundmusik Fenster wie `[Musik]` statt Text) und Beam-Suche. Kostet rund 100 ms Latenz pro Fenster |
 | `FINALIZE_MIN_GAP_SECONDS` / `FINALIZE_FORCE_SECONDS` | `0.2` / `8.0` | Finalisierung nur an Pausen, Satzenden oder nach Zwangsfrist; dazu Überlaufschutz ab 7 s vor Pufferende |
 | `PROMPT_MAX_CHARS` | `0` | Zuletzt finalisierten Text als Whisper-Prompt mitgeben. Aus, weil es in der Messung die Wortfehlerrate verschlechterte (13,3 % → 19,5 % gegenüber Offline-Transkription) |
 | `WINDOW_SECONDS` | `12` | Rollpuffer je Session |
@@ -76,4 +77,16 @@ uv run python tools/replay.py --token "$MITSCHRIFT_TOKEN" --language de --verbos
 ```
 
 `--realtime` sendet im 2,2-s-Takt statt so schnell wie möglich; `--verbose` zeigt je Segment Fenster, Latenz und die Zahl finaler und vorläufiger Abschnitte.
+
+## Messungen
+
+Wortfehlerrate der Live-Transkription gegenüber `whisper-cli` offline mit demselben Modell (`small`), Mac mit Apple M3, Replay mit `tools/replay.py`:
+
+| Aufnahme | Standard | `-sns -bs 5` |
+| --- | --- | --- |
+| 48 s Deutsch, Hintergrundmusik | 37,6 % (Anfang als `[Musik]` verworfen) | 10,9 % |
+| 56 s Englisch, durchgehende Rede | 13,3 % | 12,4 % |
+| 10 s Deutsch, Sprachsynthese | 0,0 % | 0,0 % |
+
+Mittlere Latenz pro Fenster rund 600 ms (Standard) bzw. 700 ms (`-sns -bs 5`). Ein Whisper-Prompt aus dem finalen Text (`PROMPT_MAX_CHARS`) verschlechterte das Ergebnis und ist aus. `large-v3-turbo` (q5_0) wurde offline mit Echtzeitfaktor 0,68 gemessen; der Live-Vergleich steht aus, weil der 8-GB-Mac dafür nicht reicht.
 
