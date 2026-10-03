@@ -45,7 +45,11 @@ final class RecordingController: ObservableObject {
         let queue = self.sampleQueue
         capture.onSamples = { [weak self] samples in
             queue.async {
-                let segments = sink.consume(samples)
+                let (segments, writeError) = sink.consume(samples)
+                if let writeError {
+                    Task { @MainActor in self?.fail("Die Aufnahme konnte nicht gespeichert werden: \(writeError.localizedDescription)") }
+                    return
+                }
                 guard !segments.isEmpty else { return }
                 Task { @MainActor in self?.deliver(segments) }
             }
@@ -53,6 +57,20 @@ final class RecordingController: ObservableObject {
         capture.onInterruption = { [weak self] event in
             Task { @MainActor in self?.handle(event) }
         }
+        capture.onFailure = { [weak self] error in
+            Task { @MainActor in self?.fail("Die Aufnahme wurde abgebrochen: \(error.localizedDescription)") }
+        }
+    }
+
+    /// Bricht eine laufende Aufnahme mit sichtbarem Fehler ab. Bereits geschriebenes Audio bleibt erhalten.
+    private func fail(_ message: String) {
+        guard state.isRecording else { return }
+        timer?.invalidate()
+        timer = nil
+        capture.stop()
+        let sink = self.sink
+        _ = sampleQueue.sync { sink.finish() }
+        state = .failed(message)
     }
 
     /// Startet die Aufnahme. Mit `endpoint` läuft parallel die Live-Übertragung.
@@ -171,11 +189,22 @@ private final class SampleSink: @unchecked Sendable {
     func begin(writer: WAVFileWriter) {
         self.writer = writer
         builder = SegmentBuilder()
+        failed = false
     }
 
-    func consume(_ samples: [Int16]) -> [Data] {
-        try? writer?.append(samples)
-        return builder.append(samples)
+    private var failed = false
+
+    /// Liefert fertige Segmente und, falls das Schreiben scheitert, den Fehler. Nach einem Fehler wird
+    /// nicht weiter geschrieben, damit der Fehler nur einmal gemeldet wird.
+    func consume(_ samples: [Int16]) -> (segments: [Data], error: Error?) {
+        guard !failed else { return ([], nil) }
+        do {
+            try writer?.append(samples)
+        } catch {
+            failed = true
+            return ([], error)
+        }
+        return (builder.append(samples), nil)
     }
 
     func finish() -> Data? {

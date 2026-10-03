@@ -86,6 +86,46 @@ import Testing
         #expect(session.status == .finished)
     }
 
+    @Test func finishRetriesOnTransientErrorsAndAppliesOnce() async {
+        let transport = FakeTransport()
+        transport.plan(sequence: 0, .respond(finals: [.make("A")], partials: []))
+        transport.finishFailures = [.transport("abgebrochen"), .unavailable]
+        transport.finishResult = .success(FinishResponse(sessionId: "test-session", lastSequence: 0, finalSegments: [.make("B.")]))
+        let session = makeSession(transport)
+
+        session.submit(wavData: silence(seconds: 2.5))
+        await session.finish()
+
+        #expect(transport.finishCalls == 3)
+        #expect(session.status == .finished)
+        #expect(session.transcript.finalText == "A B.")
+    }
+
+    @Test func finishGivesUpAfterMaxAttempts() async {
+        let transport = FakeTransport()
+        transport.finishFailures = Array(repeating: .unavailable, count: LiveTranscriptionSession.finishAttempts + 2)
+        let session = makeSession(transport)
+
+        session.submit(wavData: silence(seconds: 2.5))
+        await session.finish()
+
+        #expect(transport.finishCalls == LiveTranscriptionSession.finishAttempts)
+        #expect(session.status == .failed(LiveTranscriptionError.unavailable.userMessage))
+    }
+
+    @Test func unlistedClientErrorEndsSessionWithoutRetry() async {
+        let transport = FakeTransport()
+        transport.plan(sequence: 0, .fail(.clientError(status: 422)))
+        let session = makeSession(transport)
+
+        session.submit(wavData: silence(seconds: 2.5))
+        await session.finish()
+
+        #expect(transport.sentSequences == [0])
+        #expect(transport.finishCalls == 0)
+        #expect(session.status == .failed(LiveTranscriptionError.clientError(status: 422).userMessage))
+    }
+
     @Test func finishAppliesRemainingFinals() async {
         let transport = FakeTransport()
         transport.plan(sequence: 0, .respond(finals: [], partials: [.make("unsich")]))

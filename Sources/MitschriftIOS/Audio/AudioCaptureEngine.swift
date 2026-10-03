@@ -28,6 +28,8 @@ final class AudioCaptureEngine: @unchecked Sendable {
 
     var onSamples: (([Int16]) -> Void)?
     var onInterruption: ((InterruptionEvent) -> Void)?
+    /// Die Aufnahme kann nicht fortgesetzt werden (z. B. Format nach Routenwechsel nicht wandelbar).
+    var onFailure: ((Error) -> Void)?
 
     private let engine = AVAudioEngine()
     private var converter: AVAudioConverter?
@@ -69,26 +71,32 @@ final class AudioCaptureEngine: @unchecked Sendable {
             throw Failure.sessionUnavailable(error.localizedDescription)
         }
 
+        try installTap()
+        installObservers(session: session)
+        engine.prepare()
+        do {
+            try engine.start()
+        } catch {
+            engine.inputNode.removeTap(onBus: 0)
+            throw Failure.sessionUnavailable(error.localizedDescription)
+        }
+        isRunning = true
+    }
+
+    /// Legt Converter und Tap für das aktuelle Eingabeformat an. Wird beim Start und nach einem
+    /// Routenwechsel (Bluetooth-Headset, Kopfhörer) aufgerufen, weil sich das Format dann ändern kann.
+    private func installTap() throws {
         let input = engine.inputNode
+        input.removeTap(onBus: 0)
         let inputFormat = input.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0,
               let converter = AVAudioConverter(from: inputFormat, to: Self.targetFormat) else {
             throw Failure.formatUnavailable
         }
         self.converter = converter
-
         input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
             self?.convertAndForward(buffer)
         }
-        installObservers(session: session)
-        engine.prepare()
-        do {
-            try engine.start()
-        } catch {
-            input.removeTap(onBus: 0)
-            throw Failure.sessionUnavailable(error.localizedDescription)
-        }
-        isRunning = true
     }
 
     func stop() {
@@ -106,6 +114,16 @@ final class AudioCaptureEngine: @unchecked Sendable {
         guard isRunning, !engine.isRunning else { return }
         try AVAudioSession.sharedInstance().setActive(true, options: [])
         try engine.start()
+    }
+
+    private func rebuildPipeline() {
+        engine.pause()
+        do {
+            try installTap()
+            try engine.start()
+        } catch {
+            onFailure?(error)
+        }
     }
 
     private func convertAndForward(_ buffer: AVAudioPCMBuffer) {
@@ -146,10 +164,18 @@ final class AudioCaptureEngine: @unchecked Sendable {
                 break
             }
         })
-        observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: session, queue: .main) { [weak self] _ in
-            // Kopfhörer rein/raus: Engine läuft weiter, Format kann sich ändern → Tap neu setzen.
+        observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: session, queue: .main) { [weak self] note in
+            // Kopfhörer oder Bluetooth-Headset rein/raus: Das Eingabeformat kann sich ändern, der alte
+            // Converter passt dann nicht mehr. Tap und Converter neu aufbauen, Engine ggf. neu starten.
             guard let self, self.isRunning else { return }
-            if !self.engine.isRunning { try? self.engine.start() }
+            let reasonRaw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
+            let reason = AVAudioSession.RouteChangeReason(rawValue: reasonRaw)
+            switch reason {
+            case .newDeviceAvailable, .oldDeviceUnavailable, .override, .categoryChange, .routeConfigurationChange, .wakeFromSleep:
+                self.rebuildPipeline()
+            default:
+                if !self.engine.isRunning { try? self.engine.start() }
+            }
         })
     }
 }

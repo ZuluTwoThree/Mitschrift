@@ -53,5 +53,10 @@ import Testing
         #expect(LiveTranscriptionError(status: 413, body: nil).dropsSegment)
         #expect(LiveTranscriptionError(status: 401, body: nil).endsSession)
         #expect(!LiveTranscriptionError(status: 429, body: nil).endsSession)
+        #expect(LiveTranscriptionError(status: 502, body: nil) == .server(status: 502))
+        #expect(LiveTranscriptionError(status: 502, body: nil).isRetryable)
+        #expect(LiveTranscriptionError(status: 422, body: nil) == .clientError(status: 422))
+        #expect(!LiveTranscriptionError(status: 422, body: nil).isRetryable, "4xx außer 429 nie wiederholen")
+        #expect(LiveTranscriptionError(status: 403, body: nil).endsSession)
     }
 }
