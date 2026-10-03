@@ -13,6 +13,8 @@ final class FakeTransport: LiveTranscriptionTransport, @unchecked Sendable {
     private(set) var sentSequences: [Int] = []
     private(set) var finishCalls = 0
     var finishResult: Result<FinishResponse, LiveTranscriptionError>?
+    /// Fehler, die `finish` der Reihe nach wirft, bevor `finishResult` greift.
+    var finishFailures: [LiveTranscriptionError] = []
 
     func plan(sequence: Int, _ steps: Step...) {
         lock.withLock { script[sequence] = steps }
@@ -35,7 +37,11 @@ final class FakeTransport: LiveTranscriptionTransport, @unchecked Sendable {
     }
 
     func finish(sessionId: String) async throws -> FinishResponse {
-        lock.withLock { finishCalls += 1 }
+        let pending: LiveTranscriptionError? = lock.withLock {
+            finishCalls += 1
+            return finishFailures.isEmpty ? nil : finishFailures.removeFirst()
+        }
+        if let pending { throw pending }
         switch finishResult {
         case .failure(let error): throw error
         case .success(let response): return response
