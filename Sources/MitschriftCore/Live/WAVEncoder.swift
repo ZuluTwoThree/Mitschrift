@@ -38,33 +38,55 @@ public enum WAVEncoder {
         Double(sampleCount) / Double(sampleRate)
     }
 
-    /// Abtastrate einer WAV-Datei mit Standardheader, `nil` bei fremdem Format.
+    /// Abtastrate einer PCM-16-Mono-WAV-Datei, `nil` bei fremdem Format.
     public static func sampleRate(of data: Data) -> Int? {
-        guard hasStandardHeader(data) else { return nil }
-        return Int(data.uint32(at: 24))
+        parse(data)?.sampleRate
     }
 
-    /// Liest die Samples aus einer PCM-16-Mono-WAV-Datei mit 44-Byte-Header. Liefert `nil` bei anderem Format.
+    /// Liest die Samples aus einer PCM-16-Mono-WAV-Datei. Zusätzliche Chunks (z. B. `LIST` von ffmpeg)
+    /// werden übersprungen. Liefert `nil` bei anderem Format.
     public static func samples(from data: Data) -> [Int16]? {
-        guard hasStandardHeader(data) else { return nil }
-        let declared = Int(data.uint32(at: 40))
-        let payload = data.subdata(in: headerSize..<min(data.count, headerSize + declared))
+        guard let parsed = parse(data) else { return nil }
+        let payload = data.subdata(in: parsed.dataRange)
         let count = payload.count / MemoryLayout<Int16>.size
         return payload.withUnsafeBytes { raw in
             Array(raw.bindMemory(to: Int16.self).prefix(count))
         }
     }
-}
 
-private extension WAVEncoder {
-    static func hasStandardHeader(_ data: Data) -> Bool {
-        data.count >= headerSize
-            && String(data: data[0..<4], encoding: .ascii) == "RIFF"
-            && String(data: data[8..<12], encoding: .ascii) == "WAVE"
-            && data.uint16(at: 20) == 1
-            && data.uint16(at: 22) == UInt16(channels)
-            && data.uint16(at: 34) == UInt16(bitsPerSample)
-            && String(data: data[36..<40], encoding: .ascii) == "data"
+    private struct Parsed {
+        var sampleRate: Int
+        var dataRange: Range<Int>
+    }
+
+    /// Geht die RIFF-Chunks durch und prüft `fmt ` auf PCM, mono, 16 Bit.
+    private static func parse(_ data: Data) -> Parsed? {
+        guard data.count >= 12,
+              String(data: data[0..<4], encoding: .ascii) == "RIFF",
+              String(data: data[8..<12], encoding: .ascii) == "WAVE" else { return nil }
+        var offset = 12
+        var sampleRate: Int?
+        while offset + 8 <= data.count {
+            let id = String(data: data[offset..<offset + 4], encoding: .ascii) ?? ""
+            let size = Int(data.uint32(at: offset + 4))
+            let body = offset + 8
+            switch id {
+            case "fmt ":
+                guard body + 16 <= data.count,
+                      data.uint16(at: body) == 1,
+                      data.uint16(at: body + 2) == UInt16(channels),
+                      data.uint16(at: body + 14) == UInt16(bitsPerSample) else { return nil }
+                sampleRate = Int(data.uint32(at: body + 4))
+            case "data":
+                guard let sampleRate else { return nil }
+                let end = min(data.count, body + size)
+                return Parsed(sampleRate: sampleRate, dataRange: body..<end)
+            default:
+                break
+            }
+            offset = body + size + (size % 2) // Chunks sind auf gerade Länge aufgefüllt.
+        }
+        return nil
     }
 }
 

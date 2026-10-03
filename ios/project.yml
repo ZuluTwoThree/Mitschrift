@@ -38,6 +38,8 @@ targets:
         UIBackgroundModes: [audio]
         NSMicrophoneUsageDescription: "Mitschrift benötigt das Mikrofon, um Gespräche aufzuzeichnen. Audio wird nur an deinen eigenen Server im privaten Tailnet gesendet."
         ITSAppUsesNonExemptEncryption: false
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.zulutwothree.mitschrift.ios

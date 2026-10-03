@@ -31,7 +31,9 @@ import Testing
     @Test func endpointURLNormalization() {
         #expect(ServerEndpoint.normalizedURL(from: " asr.example.ts.net ")?.absoluteString == "https://asr.example.ts.net")
         #expect(ServerEndpoint.normalizedURL(from: "https://asr.example.ts.net:8443")?.port == 8443)
-        #expect(ServerEndpoint.normalizedURL(from: "http://asr.example.ts.net") == nil, "Nur HTTPS")
+        #expect(ServerEndpoint.normalizedURL(from: "http://asr.example.ts.net") == nil, "Nur HTTPS im Netz")
+        #expect(ServerEndpoint.normalizedURL(from: "http://127.0.0.1:8765")?.port == 8765, "http nur für Loopback")
+        #expect(ServerEndpoint.normalizedURL(from: "http://localhost:8765") != nil)
         #expect(ServerEndpoint.normalizedURL(from: "") == nil)
     }
 }

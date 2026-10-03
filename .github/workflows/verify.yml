@@ -49,4 +49,4 @@ jobs:
           (cd ios && xcodegen generate --quiet)
           xcodebuild -project ios/Mitschrift.xcodeproj -scheme Mitschrift-iOS \
             -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO build | tail -40
+            build | tail -40
