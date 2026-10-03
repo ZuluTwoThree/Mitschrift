@@ -15,17 +15,17 @@ final class FakeTransport: LiveTranscriptionTransport, @unchecked Sendable {
     var finishResult: Result<FinishResponse, LiveTranscriptionError>?
 
     func plan(sequence: Int, _ steps: Step...) {
-        lock.lock(); defer { lock.unlock() }
-        script[sequence] = steps
+        lock.withLock { script[sequence] = steps }
     }
 
     func sendSegment(_ segment: AudioSegment, sessionId: String, language: String) async throws -> SegmentResponse {
-        lock.lock()
-        sentSequences.append(segment.sequence)
-        var steps = script[segment.sequence] ?? []
-        let step = steps.isEmpty ? Step.respond(finals: [], partials: []) : steps.removeFirst()
-        script[segment.sequence] = steps
-        lock.unlock()
+        let step: Step = lock.withLock {
+            sentSequences.append(segment.sequence)
+            var steps = script[segment.sequence] ?? []
+            let next = steps.isEmpty ? Step.respond(finals: [], partials: []) : steps.removeFirst()
+            script[segment.sequence] = steps
+            return next
+        }
         switch step {
         case .fail(let error):
             throw error
@@ -35,7 +35,7 @@ final class FakeTransport: LiveTranscriptionTransport, @unchecked Sendable {
     }
 
     func finish(sessionId: String) async throws -> FinishResponse {
-        lock.lock(); finishCalls += 1; lock.unlock()
+        lock.withLock { finishCalls += 1 }
         switch finishResult {
         case .failure(let error): throw error
         case .success(let response): return response
