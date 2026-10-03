@@ -3,9 +3,10 @@ from __future__ import annotations
 import uuid
 
 import httpx
+import numpy as np
 import pytest
 
-from conftest import AUTH, FakeWhisper, make_settings, segment_headers, wav_bytes
+from conftest import AUTH, SAMPLE_RATE, FakeWhisper, make_settings, segment_headers, wav_bytes
 
 from asr_adapter.app import create_app
 
@@ -109,7 +110,7 @@ async def test_response_shape(client: httpx.AsyncClient, session_id: str) -> Non
     assert body["windowStart"] == 0.0
     assert body["windowEnd"] == 2.5
     assert body["final"] == []  # nichts endet 3 s vor dem Pufferende
-    assert [s["text"] for s in body["partial"]] == ["s0", "s1"]
+    assert [s["text"] for s in body["partial"]] == ["s0.", "s1."]
     assert set(body["diagnostics"]) == {"serverLatencyMs", "realtimeFactor", "queuedSegments"}
 
 
@@ -135,6 +136,41 @@ async def test_finalization_over_ten_seconds(client: httpx.AsyncClient, whisper:
     # Der Puffer wird hinter dem letzten finalen Segment gekürzt
     assert windows[-1][0] == pytest.approx(finals[-1]["end"] if len(finals) else 0.0, abs=0.01) or windows[-1][0] >= 0.0
     assert max(whisper.durations) <= 12.0
+
+
+async def test_no_finalization_mid_speech_until_forced(client: httpx.AsyncClient, whisper: FakeWhisper, session_id: str) -> None:
+    """Ohne Pause und ohne Satzende bleibt alles partial, bis ein Segment 8 s zurückliegt."""
+    whisper.punctuate = False
+    finals: list[dict] = []
+    for seq in range(4):  # Zeitachse bis 9.1 s
+        body = (await post_segment(client, session_id, seq)).json()
+        finals.extend(body["final"])
+        for segment in body["final"]:
+            assert segment["end"] <= body["windowEnd"] - 8.0
+    # Bei 9.1 s ist nur das Segment [0, 1) älter als 8 s
+    assert [(s["start"], s["end"]) for s in finals] == [(0.0, 1.0)]
+    body = (await client.post(f"/v1/live-transcriptions/{session_id}/finish", headers=AUTH)).json()
+    # Der Rest wird beim Abschluss final; er beginnt hinter dem Schnitt (1,0 s plus Suchfenster) und reicht bis zum Ende.
+    assert 1.0 <= body["final"][0]["start"] <= 1.5
+    assert body["final"][-1]["end"] == pytest.approx(9.1, abs=0.6)
+    assert body["partial"] == []
+
+
+async def test_cut_moves_into_silence_after_final(whisper: FakeWhisper) -> None:
+    """Nach einem finalen Segment wird der Puffer an der leisesten Stelle kurz dahinter geschnitten."""
+    from asr_adapter.sessions import Session
+    from asr_adapter.whisper_client import RawSegment
+
+    settings = make_settings()
+    session = Session(session_id="s", language="de", settings=settings, created_at=0.0, last_activity=0.0)
+    tone = np.frombuffer(wav_bytes(1.1, tone=True)[44:], dtype="<i2")
+    silence = np.zeros(int(0.2 * SAMPLE_RATE), dtype="<i2")
+    tail = np.frombuffer(wav_bytes(4.0, tone=True)[44:], dtype="<i2")
+    session.append(np.concatenate([tone, silence, tail]), 0)  # Stille bei 1.1–1.3 s
+    raw = [RawSegment(0.0, 1.0, "Hallo."), RawSegment(1.3, 5.3, "weiter")]
+    final, partial = session.split(raw, finalize_all=False)
+    assert [s["text"] for s in final] == ["Hallo."]
+    assert 1.1 <= session.buffer_start <= 1.3, session.buffer_start
 
 
 async def test_finish_returns_rest_and_is_idempotent(client: httpx.AsyncClient, session_id: str) -> None:

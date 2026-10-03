@@ -18,17 +18,23 @@ AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 @dataclass
 class FakeWhisper:
-    """Liefert pro volle Sekunde Audio ein Segment [k, k+1) mit Text `s<k>`. Zählt Aufrufe."""
+    """Liefert pro volle Sekunde Audio ein Segment [k, k+1) mit Text `s<k>.`. Zählt Aufrufe.
+
+    Mit `punctuate=False` enden die Texte ohne Satzzeichen und ohne Lücke: Dann darf der Adapter
+    nur noch erzwungen finalisieren.
+    """
 
     calls: int = 0
     durations: list[float] = field(default_factory=list)
     healthy: bool = True
+    punctuate: bool = True
 
     async def transcribe(self, samples: np.ndarray, language: str) -> list[RawSegment]:
         self.calls += 1
         seconds = len(samples) / SAMPLE_RATE
         self.durations.append(seconds)
-        return [RawSegment(start=float(k), end=float(k + 1), text=f"s{k}") for k in range(int(seconds))]
+        suffix = "." if self.punctuate else ""
+        return [RawSegment(start=float(k), end=float(k + 1), text=f"s{k}{suffix}") for k in range(int(seconds))]
 
     async def is_healthy(self) -> bool:
         return self.healthy

@@ -64,27 +64,69 @@ class Session:
             self.buffer_start += excess / self.settings.sample_rate
 
     def split(self, raw: list[RawSegment], *, finalize_all: bool) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """Teilt Whisper-Segmente in final/partial und kürzt den Puffer hinter dem letzten finalen."""
-        cutoff = self.buffer_end if finalize_all else self.buffer_end - self.settings.finalize_margin_seconds
+        """Teilt Whisper-Segmente in final/partial und kürzt den Puffer hinter dem letzten finalen.
+
+        Ein Segment wird nur final, wenn es alt genug ist (Sicherheitsabstand) und zusätzlich an einer
+        Pause oder einem Satzende endet; andernfalls erst, wenn es `finalize_force_seconds` zurückliegt.
+        Der Puffer wird dann an der leisesten Stelle kurz hinter dem Segmentende geschnitten, damit kein
+        angeschnittenes Wort in das nächste Fenster wandert.
+        """
+        settings = self.settings
+        cutoff = self.buffer_end if finalize_all else self.buffer_end - settings.finalize_margin_seconds
+        force_before = self.buffer_end - settings.finalize_force_seconds
+        ordered = sorted(raw, key=lambda s: s.start)
         final: list[dict[str, Any]] = []
         partial: list[dict[str, Any]] = []
         last_final_end_rel: float | None = None
-        for segment in sorted(raw, key=lambda s: s.start):
+        next_partial_start_rel: float | None = None
+        for index, segment in enumerate(ordered):
             abs_start = self.buffer_start + segment.start
             abs_end = self.buffer_start + segment.end
-            if finalize_all or (abs_end <= cutoff and not partial):
+            if finalize_all:
+                accept = True
+            elif partial or abs_end > cutoff:
+                accept = False
+            else:
+                next_start = ordered[index + 1].start if index + 1 < len(ordered) else None
+                has_pause = next_start is None or (next_start - segment.end) >= settings.finalize_min_gap_seconds
+                ends_sentence = segment.text.rstrip().endswith((".", "!", "?"))
+                forced = abs_end <= force_before
+                accept = has_pause or ends_sentence or forced
+            if accept:
                 final.append(_segment_json(abs_start, abs_end, segment.text))
                 last_final_end_rel = segment.end
             else:
+                if not partial:
+                    next_partial_start_rel = segment.start
                 partial.append(_segment_json(abs_start, abs_end, segment.text))
         if finalize_all:
             self.buffer = np.zeros(0, dtype="<i2")
             self.buffer_start = self.timeline_end
         elif last_final_end_rel is not None:
-            cut = min(len(self.buffer), int(last_final_end_rel * self.settings.sample_rate))
+            cut_rel = self._quiet_cut(last_final_end_rel, next_partial_start_rel)
+            cut = min(len(self.buffer), int(cut_rel * settings.sample_rate))
             self.buffer = self.buffer[cut:]
-            self.buffer_start += cut / self.settings.sample_rate
+            self.buffer_start += cut / settings.sample_rate
         return final, partial
+
+    def _quiet_cut(self, end_rel: float, limit_rel: float | None) -> float:
+        """Leiseste 50-ms-Stelle zwischen `end_rel` und `end_rel + cut_search_seconds` (vor `limit_rel`)."""
+        rate = self.settings.sample_rate
+        frame = int(0.05 * rate)
+        search_end = end_rel + self.settings.cut_search_seconds
+        if limit_rel is not None:
+            search_end = min(search_end, limit_rel)
+        search_end = min(search_end, len(self.buffer) / rate)
+        start_idx = int(end_rel * rate)
+        end_idx = int(search_end * rate)
+        if end_idx - start_idx < frame:
+            return end_rel
+        window = self.buffer[start_idx:end_idx].astype(np.float32)
+        frames = len(window) // frame
+        energies = (window[: frames * frame].reshape(frames, frame) ** 2).mean(axis=1)
+        quietest = int(np.argmin(energies))
+        # Mitte des leisesten Rahmens
+        return (start_idx + quietest * frame + frame // 2) / rate
 
 
 class SessionStore:

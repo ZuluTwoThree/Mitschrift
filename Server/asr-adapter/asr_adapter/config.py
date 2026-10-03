@@ -27,6 +27,12 @@ class Settings:
     # Rollpuffer und Finalisierung
     window_seconds: float = 12.0
     finalize_margin_seconds: float = 3.0
+    # Finalisieren nur an einer Pause (Lücke zum nächsten Segment), an einem Satzende oder erzwungen,
+    # wenn das Segment schon so lange zurückliegt. Verhindert Schnitte mitten im Wort.
+    finalize_min_gap_seconds: float = 0.2
+    finalize_force_seconds: float = 8.0
+    # Nach einem finalen Segment wird der Puffer an der leisesten Stelle innerhalb dieses Zeitraums geschnitten.
+    cut_search_seconds: float = 0.4
 
     # Limits
     max_sessions: int = 4
@@ -60,6 +66,8 @@ def settings_from_env() -> Settings:
         model_name=os.path.basename(model_path) if model_path else "unbekannt",
         window_seconds=_env_float("WINDOW_SECONDS", 12.0),
         finalize_margin_seconds=_env_float("FINALIZE_MARGIN_SECONDS", 3.0),
+        finalize_min_gap_seconds=_env_float("FINALIZE_MIN_GAP_SECONDS", 0.2),
+        finalize_force_seconds=_env_float("FINALIZE_FORCE_SECONDS", 8.0),
         max_sessions=_env_int("MAX_SESSIONS", 4),
         session_idle_timeout_seconds=_env_float("SESSION_IDLE_TIMEOUT_SECONDS", 60.0),
         whisper_timeout_seconds=_env_float("WHISPER_TIMEOUT_SECONDS", 15.0),
