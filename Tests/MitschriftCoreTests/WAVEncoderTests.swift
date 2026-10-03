@@ -11,6 +11,7 @@ import Testing
         #expect(String(data: data[8..<12], encoding: .ascii) == "WAVE")
         let decoded = try #require(WAVEncoder.samples(from: data))
         #expect(decoded == samples)
+        #expect(WAVEncoder.sampleRate(of: data) == 16_000)
     }
 
     @Test func contractSegmentSize() {

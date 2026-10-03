@@ -34,3 +34,19 @@ jobs:
         run: |
           swiftc -typecheck -parse-as-library -framework AppKit Tools/IconMaker.swift
           swiftc -typecheck -parse-as-library Tools/ICNSMaker.swift
+
+  ios-app:
+    name: Build iOS app (simulator)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Build for iOS Simulator
+        run: |
+          set -o pipefail
+          : > ios/Local.xcconfig
+          (cd ios && xcodegen generate --quiet)
+          xcodebuild -project ios/Mitschrift.xcodeproj -scheme Mitschrift-iOS \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build | tail -40
