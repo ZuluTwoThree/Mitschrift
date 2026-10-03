@@ -64,3 +64,14 @@ curl -s -X POST http://127.0.0.1:8765/v1/live-transcriptions/segments \
 - Segmente, die mindestens 3 s vor dem Pufferende enden, werden als `final` geliefert und aus dem Puffer entfernt. Der Rest ist `partial` und wird mit der nächsten Antwort ersetzt.
 - Ein erneut gesendetes Segment mit bekannter Sequenznummer liefert die gespeicherte Antwort ohne neue Inferenz.
 - Es werden weder Audio noch Transkripte geschrieben oder protokolliert. Logs enthalten Session-ID, Sequenznummer, Fensterlänge und Latenz.
+
+## Aufnahme nachspielen
+
+`tools/replay.py` schickt eine WAV-Datei (16 kHz, mono, PCM16) segmentweise wie die App an einen laufenden Adapter und gibt den finalen Text aus. Damit lassen sich Aufnahmen vom Gerät reproduzierbar prüfen und mit `whisper-cli` offline vergleichen.
+
+```sh
+uv run python tools/replay.py --token "$MITSCHRIFT_TOKEN" --language de --verbose aufnahme.wav
+```
+
+`--realtime` sendet im 2,2-s-Takt statt so schnell wie möglich; `--verbose` zeigt je Segment Fenster, Latenz und die Zahl finaler und vorläufiger Abschnitte.
+
