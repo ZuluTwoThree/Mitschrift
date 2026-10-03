@@ -81,7 +81,9 @@ class Session:
         cutoff = self.buffer_end if finalize_all else self.buffer_end - settings.finalize_margin_seconds
         force_before = self.buffer_end - settings.finalize_force_seconds
         # Alles, was vor dieser Marke beginnt, würde beim nächsten Segment aus dem Fenster fallen.
-        overflow_before = self.buffer_end - (settings.window_seconds - settings.max_segment_seconds)
+        # Pro Anfrage kommen höchstens max_segment_seconds minus der verworfenen Überlappung neu dazu.
+        max_appended = settings.max_segment_seconds - settings.overlap_seconds
+        overflow_before = self.buffer_end - (settings.window_seconds - max_appended)
         ordered = sorted(raw, key=lambda s: s.start)
         final: list[dict[str, Any]] = []
         partial: list[dict[str, Any]] = []

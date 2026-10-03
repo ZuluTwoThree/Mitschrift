@@ -140,19 +140,20 @@ async def test_finalization_over_ten_seconds(client: httpx.AsyncClient, whisper:
 
 async def test_no_finalization_mid_speech_until_forced(client: httpx.AsyncClient, whisper: FakeWhisper, session_id: str) -> None:
     """Ohne Pause und ohne Satzende bleibt alles partial, bis ein Segment 8 s zurückliegt oder sein
-    Anfang beim nächsten Segment aus dem 12-s-Fenster fallen würde (Überlaufschutz ab buffer_end - 7 s)."""
+    Anfang beim nächsten Segment aus dem 12-s-Fenster fallen würde (Überlaufschutz ab buffer_end - 7,3 s:
+    Fenster 12 s minus höchstens 4,7 s neu hinzukommendes Audio)."""
     whisper.punctuate = False
     finals: list[dict] = []
     for seq in range(4):  # Zeitachse bis 9.1 s
         body = (await post_segment(client, session_id, seq)).json()
         finals.extend(body["final"])
         for segment in body["final"]:
-            assert segment["end"] <= body["windowEnd"] - 8.0 or segment["start"] <= body["windowEnd"] - 7.0
-    # Bis 6.9 s greift keine Regel; bei 9.1 s sind die Segmente mit Anfang <= 2.1 s vom Überlaufschutz betroffen
-    assert [(s["start"], s["end"]) for s in finals] == [(0.0, 1.0), (1.0, 2.0), (2.0, 3.0)]
+            assert segment["end"] <= body["windowEnd"] - 8.0 or segment["start"] <= body["windowEnd"] - 7.3
+    # Bis 6.9 s greift keine Regel; bei 9.1 s sind die Segmente mit Anfang <= 1.8 s vom Überlaufschutz betroffen
+    assert [(s["start"], s["end"]) for s in finals] == [(0.0, 1.0), (1.0, 2.0)]
     body = (await client.post(f"/v1/live-transcriptions/{session_id}/finish", headers=AUTH)).json()
-    # Der Rest wird beim Abschluss final; er beginnt hinter dem Schnitt (3,0 s plus Suchfenster) und reicht bis zum Ende.
-    assert 3.0 <= body["final"][0]["start"] <= 3.5
+    # Der Rest wird beim Abschluss final; er beginnt hinter dem Schnitt (2,0 s plus Suchfenster) und reicht bis zum Ende.
+    assert 2.0 <= body["final"][0]["start"] <= 2.5
     assert body["final"][-1]["end"] == pytest.approx(9.1, abs=0.6)
     assert body["partial"] == []
 
@@ -163,7 +164,7 @@ async def test_overflow_finalizes_before_audio_is_dropped(whisper: FakeWhisper) 
     from asr_adapter.sessions import Session
     from asr_adapter.whisper_client import RawSegment
 
-    settings = make_settings()  # window 12 s, max_segment 5 s → Überlaufmarke bei buffer_end - 7 s
+    settings = make_settings()  # window 12 s, max_segment 5 s, overlap 0,3 s → Überlaufmarke bei buffer_end - 7,3 s
     session = Session(session_id="s", language="de", settings=settings, created_at=0.0, last_activity=0.0)
     session.append(np.zeros(int(12.0 * SAMPLE_RATE), dtype="<i2"), 0)
     # Durchgehende Rede ohne Satzzeichen: ein langes Segment 0–10 s und ein Rest 10–12 s
@@ -182,6 +183,20 @@ async def test_overflow_rule_does_not_fire_in_small_window(whisper: FakeWhisper)
     session.append(np.zeros(int(6.0 * SAMPLE_RATE), dtype="<i2"), 0)
     final, partial = session.split([RawSegment(0.0, 5.5, "noch unsicher")], finalize_all=False)
     assert final == [] and len(partial) == 1
+
+
+async def test_overflow_threshold_accounts_for_overlap(whisper: FakeWhisper) -> None:
+    """Ein Segment, das bei 5,0 s beginnt, bleibt im 12-s-Fenster erhalten (nächster Append verdrängt nur bis 4,7 s)
+    und darf deshalb nicht vorzeitig finalisiert werden."""
+    from asr_adapter.sessions import Session
+    from asr_adapter.whisper_client import RawSegment
+
+    session = Session(session_id="s", language="de", settings=make_settings(), created_at=0.0, last_activity=0.0)
+    session.append(np.zeros(int(12.0 * SAMPLE_RATE), dtype="<i2"), 0)
+    raw = [RawSegment(0.0, 4.6, "alt"), RawSegment(5.0, 11.5, "noch im Fenster")]
+    final, partial = session.split(raw, finalize_all=False)
+    assert [s["text"] for s in final] == ["alt"]
+    assert [s["text"] for s in partial] == ["noch im Fenster"]
 
 
 async def test_final_text_is_passed_as_prompt_when_enabled(whisper: FakeWhisper) -> None:
