@@ -1,0 +1,21 @@
+name: Verify ASR adapter
+
+on:
+  push:
+    paths: ["Server/asr-adapter/**", ".github/workflows/adapter.yml"]
+  pull_request:
+    paths: ["Server/asr-adapter/**", ".github/workflows/adapter.yml"]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Server/asr-adapter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Run tests
+        run: uv run pytest -q
