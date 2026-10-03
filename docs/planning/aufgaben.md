@@ -5,7 +5,7 @@ Stand: 2026-10-03. Gegenstück zu `umsetzungsplan.md`: was nur du tun kannst, na
 ## Checkliste
 
 - [x] Mindestens 40 GB auf dem Mac frei (Stand 2026-10-03: 91 GB)
-- [ ] macOS aktualisiert (aktuelles Xcode verlangt eine neuere macOS-Version als 15.7)
+- [x] macOS aktualisiert (aktuelles Xcode verlangt eine neuere macOS-Version als 15.7)
 - [ ] Xcode installiert, Lizenz angenommen, iOS-Plattform geladen
 - [ ] `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` ausgeführt
 - [ ] `brew install xcodegen` ausgeführt
