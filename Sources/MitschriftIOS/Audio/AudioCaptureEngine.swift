@@ -41,6 +41,15 @@ final class AudioCaptureEngine: @unchecked Sendable {
         interleaved: true
     )!
 
+    /// Ab dem iOS-26-SDK heißt die Option `allowBluetoothHFP`; ältere Toolchains kennen nur `allowBluetooth`.
+    private static var bluetoothOption: AVAudioSession.CategoryOptions {
+        #if compiler(>=6.2)
+        return .allowBluetoothHFP
+        #else
+        return .allowBluetooth
+        #endif
+    }
+
     static func requestPermission() async -> Bool {
         await AVAudioApplication.requestRecordPermission()
     }
@@ -53,7 +62,7 @@ final class AudioCaptureEngine: @unchecked Sendable {
         guard !isRunning else { return }
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
+            try session.setCategory(.record, mode: .measurement, options: Self.bluetoothOption)
             try session.setPreferredSampleRate(Double(WAVEncoder.sampleRate))
             try session.setActive(true, options: [])
         } catch {
