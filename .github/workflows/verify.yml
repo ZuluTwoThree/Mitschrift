@@ -49,9 +49,5 @@ jobs:
           (cd ios && xcodegen generate --quiet)
           xcodebuild -project ios/Mitschrift.xcodeproj -scheme Mitschrift-iOS \
             -destination 'generic/platform=iOS Simulator' \
-<<<<<<< HEAD
-            build | tail -40
-=======
             build > xcodebuild.log 2>&1 || { grep -E "error:|BUILD" xcodebuild.log | head -40; exit 1; }
           grep -E "warning:|BUILD" xcodebuild.log | head -20
->>>>>>> wp4-ios
