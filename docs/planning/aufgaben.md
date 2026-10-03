@@ -6,8 +6,8 @@ Stand: 2026-10-03. Gegenstück zu `umsetzungsplan.md`: was nur du tun kannst, na
 
 - [x] Mindestens 40 GB auf dem Mac frei (Stand 2026-10-03: 91 GB)
 - [x] macOS aktualisiert (aktuelles Xcode verlangt eine neuere macOS-Version als 15.7)
-- [ ] Xcode installiert, Lizenz angenommen, iOS-Plattform geladen
-- [ ] `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` ausgeführt
+- [x] Xcode installiert, Lizenz angenommen, iOS-Plattform geladen
+- [x] `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` ausgeführt
 - [x] `brew install xcodegen` ausgeführt (2.46.0)
 - [ ] Apple-ID in Xcode hinterlegt
 - [ ] iPhone: Entwicklermodus an, Mac vertraut, Tailscale installiert
