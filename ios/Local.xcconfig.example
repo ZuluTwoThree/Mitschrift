@@ -1,0 +1,3 @@
+// Kopieren nach ios/Local.xcconfig (gitignoriert) und die eigene Team-ID eintragen.
+// Die Team-ID steht in Xcode → Settings → Accounts → Personal Team, oder in Keychain Access beim Zertifikat.
+DEVELOPMENT_TEAM = ABCDE12345

@@ -38,23 +38,33 @@ public enum WAVEncoder {
         Double(sampleCount) / Double(sampleRate)
     }
 
-    /// Liest die Samples aus einer WAV-Datei im Vertragsformat. Liefert `nil` bei anderem Format.
+    /// Abtastrate einer WAV-Datei mit Standardheader, `nil` bei fremdem Format.
+    public static func sampleRate(of data: Data) -> Int? {
+        guard hasStandardHeader(data) else { return nil }
+        return Int(data.uint32(at: 24))
+    }
+
+    /// Liest die Samples aus einer PCM-16-Mono-WAV-Datei mit 44-Byte-Header. Liefert `nil` bei anderem Format.
     public static func samples(from data: Data) -> [Int16]? {
-        guard data.count >= headerSize,
-              String(data: data[0..<4], encoding: .ascii) == "RIFF",
-              String(data: data[8..<12], encoding: .ascii) == "WAVE",
-              data.uint16(at: 20) == 1,
-              data.uint16(at: 22) == UInt16(channels),
-              data.uint32(at: 24) == UInt32(sampleRate),
-              data.uint16(at: 34) == UInt16(bitsPerSample),
-              String(data: data[36..<40], encoding: .ascii) == "data"
-        else { return nil }
+        guard hasStandardHeader(data) else { return nil }
         let declared = Int(data.uint32(at: 40))
         let payload = data.subdata(in: headerSize..<min(data.count, headerSize + declared))
         let count = payload.count / MemoryLayout<Int16>.size
         return payload.withUnsafeBytes { raw in
             Array(raw.bindMemory(to: Int16.self).prefix(count))
         }
+    }
+}
+
+private extension WAVEncoder {
+    static func hasStandardHeader(_ data: Data) -> Bool {
+        data.count >= headerSize
+            && String(data: data[0..<4], encoding: .ascii) == "RIFF"
+            && String(data: data[8..<12], encoding: .ascii) == "WAVE"
+            && data.uint16(at: 20) == 1
+            && data.uint16(at: 22) == UInt16(channels)
+            && data.uint16(at: 34) == UInt16(bitsPerSample)
+            && String(data: data[36..<40], encoding: .ascii) == "data"
     }
 }
 
