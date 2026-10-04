@@ -78,6 +78,13 @@ uv run python tools/replay.py --token "$MITSCHRIFT_TOKEN" --language de --verbos
 
 `--realtime` sendet im 2,2-s-Takt statt so schnell wie möglich; `--verbose` zeigt je Segment Fenster, Latenz und die Zahl finaler und vorläufiger Abschnitte.
 
+Wortfehlerrate gegen eine Offline-Transkription (`whisper-cli -nt -np … > referenz.txt`), `tools/wer.py` kommt mit PR #10:
+
+```sh
+uv run python tools/replay.py --token "$MITSCHRIFT_TOKEN" aufnahme.wav > hypothese.txt
+uv run python tools/wer.py referenz.txt hypothese.txt
+```
+
 ## Messungen
 
 Wortfehlerrate der Live-Transkription gegenüber `whisper-cli` offline mit demselben Modell (`small`), Mac mit Apple M3, Replay mit `tools/replay.py`:
