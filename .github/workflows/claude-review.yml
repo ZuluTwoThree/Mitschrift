@@ -26,4 +26,5 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_REVIEW }}
           plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
           plugins: "code-review@claude-code-plugins"
+          show_full_output: true
           prompt: "Lies zuerst die Datei review.md im Wurzelverzeichnis des Repositorys und wende ihre Regeln (Haltung, Schweregrade, Prüfschwerpunkte, Format, deutsche Sprache) auf deinen Kommentar an. Dann: /code-review:code-review https://github.com/${{ github.repository }}/pull/${{ github.event.issue.number }}"
