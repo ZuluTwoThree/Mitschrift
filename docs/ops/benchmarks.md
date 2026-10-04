@@ -59,7 +59,7 @@ G137 in Schleife, 61,5 min, Echtzeit-Replay über den Adapter (NeMo-Streaming mi
 | Fehler in Logs | keine |
 | Wörter | 9332 erkannt zu 9315 erwartet (27 Wiederholungen) |
 
-Auffällig: Die Wortfehlerrate je Wiederholung steigt über die Stunde von rund 19 % (erste fünf) auf rund 26 % (letzte fünf). Ursache wird geprüft (Streaming-Cache des Modells oder Sprechertrennung); mögliche Abhilfe ist ein Neuaufbau des Streams an einer Äußerungsgrenze alle paar Minuten.
+Keine Qualitätsdrift: Die Wortfehlerrate je Wiederholung (an der wiederkehrenden Anfangsphrase ausgerichtet) liegt über die ganze Stunde konstant zwischen 16,8 % und 19,1 % (Mittel erste fünf 18,1 %, letzte fünf 18,0 %). Eine erste Auswertung mit gleich großen Wortblöcken hatte eine scheinbare Drift gezeigt; das war ein Artefakt der Blockaufteilung.
 
 ## Mac M3 (8 GB), `small`, Fensterverfahren, 2026-10-03
 
