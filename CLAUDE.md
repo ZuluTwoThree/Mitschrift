@@ -21,8 +21,8 @@ macOS 14+, Homebrew mit `whisper.cpp` und `ffmpeg` (`brew install whisper-cpp ff
 ## Struktur
 
 - `Package.swift` – SwiftPM mit Library `MitschriftCore` und Tests; macOS 14 / iOS 17
-- `Sources/MitschriftCore/` – plattformneutral, nur Foundation/Combine: `Model` (Segment, Transcript, API-Modelle), `Live` (SegmentQueue, LiveTranscriptionSession, URLSession-Transport, WAVEncoder), `Recording` (Zustand, Dateinamen), `Config` (ServerEndpoint)
-- `Sources/MitschriftIOS/` – iOS-App: `MitschriftIOSApp` (Tabs Aufnahme/Server), `Audio/AudioCaptureEngine` (AVAudioEngine → 16 kHz mono Int16, Unterbrechungen), `Recording/RecordingController` (Berechtigung, WAV-Datei, Segmente), `Settings/` (Keychain, Verbindungstest), `Views/`
+- `Sources/MitschriftCore/` – plattformneutral, nur Foundation/Combine: `Model` (Segment, Transcript, API-Modelle), `Live` (SegmentQueue, LiveTranscriptionSession, URLSession-Transport, WAVEncoder), `Recording` (Zustand, Dateinamen), `Config` (ServerEndpoint; `ServerProfile` + `ServerProfileStore` für mehrere gespeicherte Server, Profile als JSON in UserDefaults, Token je Profil über `TokenStore` im Schlüsselbund, Migration der alten Einzelkonfiguration aus `KeychainEndpointStore`)
+- `Sources/MitschriftIOS/` – iOS-App: `MitschriftIOSApp` (Tabs Aufnahme/Server), `Audio/AudioCaptureEngine` (AVAudioEngine → 16 kHz mono Int16, Unterbrechungen), `Recording/RecordingController` (Berechtigung, WAV-Datei, Segmente), `Settings/` (Serverprofile mit Menüauswahl, Keychain, Verbindungstest), `Views/`
 - `ios/project.yml` – XcodeGen-Definition; `ios/Mitschrift.xcodeproj`, `ios/Info.plist` und `ios/Local.xcconfig` werden erzeugt und sind gitignoriert
 - `Sources/MitschriftMac/` – macOS-App: `MitschriftApp.swift` (UI, Aufnahme) und `LocalWhisperEngine.swift` (`whisper-cli`/`ffmpeg` per `Process`)
 - `Tests/MitschriftCoreTests/` – swift-testing; `FakeTransport` in `Support/`

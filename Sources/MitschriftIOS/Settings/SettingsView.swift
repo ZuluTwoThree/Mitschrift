@@ -2,20 +2,37 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var settings: SettingsStore
+    @State private var confirmDelete = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
+                    Picker("Server", selection: $settings.selection) {
+                        ForEach(settings.profiles) { profile in
+                            Text(profile.name).tag(SettingsStore.Selection.profile(profile.id))
+                        }
+                        Text("Neuer Server …").tag(SettingsStore.Selection.new)
+                    }
+                    .pickerStyle(.menu)
+                } footer: {
+                    if settings.profiles.isEmpty {
+                        Text("Nach dem ersten Speichern erscheint der Server hier im Menü.")
+                    }
+                }
+
+                Section {
+                    TextField(settings.selectedProfile == nil ? "Name (optional)" : "Name", text: $settings.profileName)
+                        .autocorrectionDisabled()
                     TextField("https://asr.<tailnet>.ts.net", text: $settings.serverAddress)
                         .keyboardType(.URL)
                         .textContentType(.URL)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
-                    SecureField("Zugangscode", text: $settings.token)
+                    SecureField(settings.selectedProfile == nil ? "Zugangscode" : "Zugangscode (leer = beibehalten)", text: $settings.token)
                         .textContentType(.password)
                 } header: {
-                    Text("Eigener ASR-Server")
+                    Text(settings.selectedProfile == nil ? "Neuer Server" : "Eigener ASR-Server")
                 } footer: {
                     Text("Die Adresse ist nur im privaten Tailnet erreichbar. Der Zugangscode wird im Schlüsselbund gespeichert.")
                 }
@@ -46,6 +63,22 @@ struct SettingsView: View {
                 if let error = settings.saveError {
                     Section {
                         Text(error).foregroundStyle(.orange)
+                    }
+                }
+
+                if let profile = settings.selectedProfile {
+                    Section {
+                        Button("Server entfernen", role: .destructive) {
+                            confirmDelete = true
+                        }
+                        .confirmationDialog(
+                            "„\(profile.name)“ samt Zugangscode entfernen?",
+                            isPresented: $confirmDelete,
+                            titleVisibility: .visible
+                        ) {
+                            Button("Entfernen", role: .destructive) { settings.deleteSelectedProfile() }
+                            Button("Abbrechen", role: .cancel) {}
+                        }
                     }
                 }
             }

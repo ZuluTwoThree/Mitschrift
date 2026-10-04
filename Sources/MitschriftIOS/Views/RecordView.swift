@@ -107,7 +107,7 @@ struct RecordView: View {
     private var serverLine: some View {
         Group {
             if settings.isConfigured {
-                Label("Live-Transkription über eigenen Server · Segmente: \(recorder.segmentCount)", systemImage: "network")
+                Label("Live über \(settings.selectedServerName ?? "eigenen Server") · Segmente: \(recorder.segmentCount)", systemImage: "network")
             } else {
                 Label("Kein Server eingerichtet. Aufnahme wird nur lokal gespeichert.", systemImage: "externaldrive")
             }
