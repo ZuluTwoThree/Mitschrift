@@ -11,10 +11,14 @@ services:
     image: ghcr.io/ggml-org/whisper.cpp:main-cuda
     profiles: ["whisper"]
     restart: unless-stopped
-    command: >
-      whisper-server --host 0.0.0.0 --port 8080
-      -m /models/${WHISPER_MODEL:-ggml-large-v3-turbo-q5_0.bin}
-      -l ${LANGUAGE:-de} -t ${WHISPER_THREADS:-8} ${WHISPER_ARGS:--sns -bs 5}
+    # Das Image hat ENTRYPOINT ["bash","-c"]; damit die ganze Zeile als ein Skript ankommt,
+    # wird der Entrypoint hier explizit gesetzt und der Befehl als ein einziges Element übergeben.
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        whisper-server --host 0.0.0.0 --port 8080
+        -m /models/${WHISPER_MODEL:-ggml-large-v3-turbo-q5_0.bin}
+        -l ${LANGUAGE:-de} -t ${WHISPER_THREADS:-8} ${WHISPER_ARGS:--sns -bs 5}
     volumes:
       - ${MODELS_DIR:-./models}:/models:ro
     ports:
