@@ -67,7 +67,7 @@ struct RecordingPanel: View {
             SpeakerNamesSheet(recording: recording)
         }
         .sheet(isPresented: $showNotes) {
-            NotesView(recording: recording, onRecreate: createNotes)
+            NotesView(recording: recording)
         }
         .onChange(of: recording.notes) { old, new in
             if old == nil, new != nil { showNotes = true }

@@ -1,7 +1,13 @@
 import SwiftUI
 import MitschriftCore
 
-/// Alle gespeicherten Aufnahmen: öffnen, teilen, löschen, aufräumen.
+/// Ziele in der Aufnahmenliste: die Aufnahme selbst oder direkt ihr Protokoll.
+enum RecordingRoute: Hashable {
+    case detail(String)
+    case notes(String)
+}
+
+/// Alle gespeicherten Aufnahmen: öffnen, Protokoll direkt aufrufen, teilen, löschen, aufräumen.
 struct RecordingsListView: View {
     @EnvironmentObject private var library: RecordingLibraryModel
     @EnvironmentObject private var settings: SettingsStore
@@ -9,7 +15,7 @@ struct RecordingsListView: View {
     @State private var selection: Set<String> = []
     @State private var editMode: EditMode = .inactive
     @State private var confirmDelete = false
-    @State private var path: [String] = []
+    @State private var path: [RecordingRoute] = []
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -52,9 +58,13 @@ struct RecordingsListView: View {
         .onAppear {
             library.reload()
             #if DEBUG
-            // Für Gestaltungs-Screenshots: `SIMCTL_CHILD_MITSCHRIFT_DEV_SHOW_RECORDINGS=detail` öffnet die neueste Aufnahme.
-            if ProcessInfo.processInfo.environment["MITSCHRIFT_DEV_SHOW_RECORDINGS"] == "detail", let first = library.items.first {
-                path = [first.id]
+            // Für Gestaltungs-Screenshots: `SIMCTL_CHILD_MITSCHRIFT_DEV_SHOW_RECORDINGS=detail|notes` öffnet die neueste Aufnahme.
+            if let first = library.items.first {
+                switch ProcessInfo.processInfo.environment["MITSCHRIFT_DEV_SHOW_RECORDINGS"] {
+                case "detail": path = [.detail(first.id)]
+                case "notes": path = [.notes(first.id)]
+                default: break
+                }
             }
             #endif
         }
@@ -64,8 +74,10 @@ struct RecordingsListView: View {
         List(selection: $selection) {
             Section {
                 ForEach(library.items) { item in
-                    NavigationLink(value: item.id) {
-                        RecordingRow(item: item)
+                    NavigationLink(value: RecordingRoute.detail(item.id)) {
+                        RecordingRow(item: item) {
+                            path.append(.notes(item.id))
+                        }
                     }
                     .listRowBackground(Theme.ink)
                 }
@@ -85,9 +97,16 @@ struct RecordingsListView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .navigationDestination(for: String.self) { id in
-            if let item = library.items.first(where: { $0.id == id }) {
-                RecordingDetailView(item: item)
+        .navigationDestination(for: RecordingRoute.self) { route in
+            switch route {
+            case .detail(let id):
+                if let item = library.items.first(where: { $0.id == id }) {
+                    RecordingDetailView(item: item)
+                }
+            case .notes(let id):
+                if let item = library.items.first(where: { $0.id == id }) {
+                    RecordingNotesView(item: item)
+                }
             }
         }
     }
@@ -108,8 +127,10 @@ struct RecordingsListView: View {
 }
 
 /// Eine Zeile der Liste: Zeitpunkt, Dauer und Größe, Marken für Mitschrift und Protokoll.
+/// Die Protokoll-Marke ist ein Knopf und öffnet das Protokoll direkt.
 struct RecordingRow: View {
     var item: RecordingItem
+    var onOpenNotes: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -128,7 +149,11 @@ struct RecordingRow: View {
                     badge("Mitschrift", color: Theme.mint)
                 }
                 if item.hasNotes {
-                    badge("Protokoll", color: Theme.mint)
+                    Button(action: onOpenNotes) {
+                        badge("Protokoll", color: Theme.mint, filled: true)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Protokoll öffnen")
                 }
             }
         }
@@ -143,13 +168,14 @@ struct RecordingRow: View {
         return parts.joined(separator: ", ")
     }
 
-    private func badge(_ text: String, color: Color) -> some View {
+    private func badge(_ text: String, color: Color, filled: Bool = false) -> some View {
         Text(text)
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(color)
+            .foregroundStyle(filled ? Theme.night : color)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .overlay(Capsule().strokeBorder(color.opacity(0.6)))
+            .background(filled ? color : Color.clear, in: Capsule())
+            .overlay(Capsule().strokeBorder(color.opacity(filled ? 0 : 0.6)))
     }
 }
 
@@ -195,5 +221,20 @@ struct RecordingDetailView: View {
             Button("Abbrechen", role: .cancel) {}
         }
         .onDisappear { library.reload() }
+    }
+}
+
+/// Das Protokoll einer Aufnahme aus der Liste, ohne Umweg über die Detailansicht.
+struct RecordingNotesView: View {
+    @StateObject private var recording: OpenRecording
+
+    init(item: RecordingItem) {
+        let directory = item.audioURL.deletingLastPathComponent()
+        _recording = StateObject(wrappedValue: OpenRecording(item: item, language: "de", library: RecordingLibrary(directory: directory)))
+    }
+
+    var body: some View {
+        NotesScreen(recording: recording)
+            .themedScreen()
     }
 }

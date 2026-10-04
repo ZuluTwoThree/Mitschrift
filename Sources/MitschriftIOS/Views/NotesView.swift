@@ -1,40 +1,78 @@
 import SwiftUI
 import MitschriftCore
 
-/// Das Protokoll des Assistenten: Markdown mit Überschriften, Aufzählungen und Aufgaben-Kästchen.
+/// Das Protokoll des Assistenten als Blatt über der Aufnahme.
 struct NotesView: View {
     @ObservedObject var recording: OpenRecording
-    var onRecreate: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            Group {
-                if let notes = recording.notes {
-                    ScrollView {
-                        MarkdownNotes(markdown: notes)
-                            .padding(.horizontal, Theme.gutter)
-                            .padding(.vertical, 12)
-                            .textSelection(.enabled)
+            NotesScreen(recording: recording)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Fertig") { dismiss() }
                     }
-                } else {
-                    Text("Noch kein Protokoll.")
-                        .font(Theme.Fonts.transcript)
+                }
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
+/// Die Protokollseite selbst: Markdown mit Überschriften, Aufzählungen und Aufgaben-Kästchen,
+/// dazu Teilen und Neu erstellen. Steht im Blatt nach dem Stoppen und direkt aus der Aufnahmenliste.
+struct NotesScreen: View {
+    @ObservedObject var recording: OpenRecording
+    @EnvironmentObject private var settings: SettingsStore
+
+    var body: some View {
+        Group {
+            if recording.activity == .writingNotes {
+                VStack(spacing: 12) {
+                    ProgressView().tint(Theme.mint)
+                    Text("Der Assistent liest die Mitschrift und schreibt das Protokoll.")
+                        .font(Theme.Fonts.status)
                         .foregroundStyle(Theme.mist)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                }
+            } else if let notes = recording.notes {
+                ScrollView {
+                    MarkdownNotes(markdown: notes)
+                        .padding(.horizontal, Theme.gutter)
+                        .padding(.vertical, 12)
+                        .textSelection(.enabled)
+                }
+            } else {
+                VStack(spacing: 12) {
+                    Text(recording.error ?? "Noch kein Protokoll.")
+                        .font(Theme.Fonts.status)
+                        .foregroundStyle(recording.error == nil ? Theme.mist : Theme.amber)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                    if settings.isConfigured, !recording.transcript.isEmpty {
+                        Button("Protokoll erstellen", action: recreate)
+                            .buttonStyle(PaperButtonStyle(prominent: true))
+                    }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Theme.night)
-            .navigationTitle("Protokoll")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.night)
+        .navigationTitle("Protokoll")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 14) {
+                    if let url = recording.item.notesURL, recording.notes != nil {
+                        ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
+                    }
                     Menu {
-                        Button {
-                            dismiss()
-                            onRecreate()
-                        } label: {
-                            Label("Neu erstellen", systemImage: "arrow.clockwise")
+                        if settings.isConfigured, !recording.transcript.isEmpty {
+                            Button(action: recreate) {
+                                Label("Neu erstellen", systemImage: "arrow.clockwise")
+                            }
+                            .disabled(recording.isBusy)
                         }
                         if let model = recording.notesModel {
                             Text("Modell: \(model)")
@@ -43,18 +81,14 @@ struct NotesView: View {
                         Image(systemName: "ellipsis.circle")
                     }
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    if let url = recording.item.notesURL {
-                        ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") { dismiss() }
-                }
             }
-            .tint(Theme.coral)
         }
-        .preferredColorScheme(.dark)
+        .tint(Theme.coral)
+    }
+
+    private func recreate() {
+        guard let endpoint = settings.endpoint else { return }
+        Task { await recording.createNotes(endpoint: endpoint) }
     }
 }
 
