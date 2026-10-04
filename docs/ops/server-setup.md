@@ -50,7 +50,7 @@ cd ~/mitschrift/repo/Server/deploy
 cp .env.example .env
 ```
 
-In `.env` eintragen: `MITSCHRIFT_TOKEN` (einmal `openssl rand -hex 32`), `MODELS_DIR=/home/<nutzer>/mitschrift/models`, Modell und Ports. Wenn Port 8080 auf dem Host belegt ist, bleibt das egal: Die Container binden auf `127.0.0.1:${WHISPER_PORT}` (Standard 8090) und `127.0.0.1:${NEMO_PORT}` (8095).
+In `.env` eintragen: `MITSCHRIFT_TOKEN` (einmal `openssl rand -hex 32`), `MODELS_DIR=/home/<nutzer>/mitschrift/models`, Modell und Ports. Wenn Port 8080 auf dem Host belegt ist, bleibt das egal: Die Container binden auf `127.0.0.1:${WHISPER_PORT}` (Standard 8092) und `127.0.0.1:${NEMO_PORT}` (8095).
 
 ## 4. Starten
 

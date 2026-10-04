@@ -18,7 +18,7 @@ services:
     volumes:
       - ${MODELS_DIR:-./models}:/models:ro
     ports:
-      - "127.0.0.1:${WHISPER_PORT:-8090}:8080"
+      - "127.0.0.1:${WHISPER_PORT:-8092}:8080"
     deploy:
       resources:
         reservations:
@@ -36,14 +36,16 @@ services:
     build:
       context: ./nemo-speech
       args:
-        NEMO_SPEECH_FLAVOR: ${NEMO_SPEECH_FLAVOR:-cuda13}
-    image: mitschrift/nemo-speech:0.2.0-${NEMO_SPEECH_FLAVOR:-cuda13}
+        NEMO_SPEECH_FLAVOR: ${NEMO_SPEECH_FLAVOR:-cuda}
+    image: mitschrift/nemo-speech:0.2.0-${NEMO_SPEECH_FLAVOR:-cuda}
     profiles: ["nemo"]
     restart: unless-stopped
     command: >
       serve --host 0.0.0.0 --port 8080 --no-ui --access-log
       --device ${NEMO_DEVICE:-cuda}
       --asr-model /models/${NEMO_ASR_MODEL:-nemotron-3.5-asr-streaming-0.6b.q8_0.gguf}
+      --itn-model-dir /opt/nemo-speech/itn/itn_configs
+      --asr.endpointing.enable=true --asr.endpointing.stop_history_eou_ms=${NEMO_ENDPOINTING_MS:-700}
       ${NEMO_DIAR_ARGS:-}
       ${NEMO_ARGS:-}
     volumes:
