@@ -56,6 +56,15 @@ class Settings:
     max_inflight_per_session: int = 2
     whisper_timeout_seconds: float = 15.0
 
+    # Protokoll-Assistent: OpenAI-kompatibler Chat-Endpunkt (z. B. llama-server). Leer = Funktion aus.
+    llm_url: str = ""
+    llm_model: str = "local"
+    llm_api_key: str | None = None
+    llm_timeout_seconds: float = 180.0
+    llm_max_input_chars: int = 120_000
+    llm_max_output_tokens: int = 2048
+    llm_temperature: float = 0.2
+
 
 def _env_float(name: str, default: float) -> float:
     raw = os.environ.get(name)
@@ -107,4 +116,11 @@ def settings_from_env() -> Settings:
         max_sessions=_env_int("MAX_SESSIONS", 4),
         session_idle_timeout_seconds=_env_float("SESSION_IDLE_TIMEOUT_SECONDS", 60.0),
         whisper_timeout_seconds=_env_float("WHISPER_TIMEOUT_SECONDS", 15.0),
+        llm_url=os.environ.get("LLM_URL", "").strip().rstrip("/"),
+        llm_model=os.environ.get("LLM_MODEL", "").strip() or "local",
+        llm_api_key=os.environ.get("LLM_API_KEY") or None,
+        llm_timeout_seconds=_env_float("LLM_TIMEOUT_SECONDS", 180.0),
+        llm_max_input_chars=_env_int("LLM_MAX_INPUT_CHARS", 120_000),
+        llm_max_output_tokens=_env_int("LLM_MAX_OUTPUT_TOKENS", 2048),
+        llm_temperature=_env_float("LLM_TEMPERATURE", 0.2),
     )

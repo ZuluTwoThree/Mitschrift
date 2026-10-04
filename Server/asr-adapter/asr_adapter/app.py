@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from . import __version__
 from .config import Settings, settings_from_env
+from .llm_client import NotesError, NotesWriter, OpenAIChatClient
 from .nemo_realtime import NemoHealthClient
 from .sessions import SessionError, SessionStore
 from .wav import WavError, parse_wav
@@ -19,6 +20,8 @@ from .whisper_client import Transcriber, TranscriberError, WhisperServerClient
 log = logging.getLogger("asr_adapter")
 
 LANGUAGES = {"de", "en", "auto"}
+NOTES_LANGUAGES = {"de", "en"}
+NOTES_UNAVAILABLE = "Der Protokoll-Assistent ist gerade nicht verfügbar."
 HEADER_SESSION = "x-mitschrift-session"
 HEADER_SEQUENCE = "x-mitschrift-sequence"
 HEADER_LANGUAGE = "x-mitschrift-language"
@@ -40,8 +43,18 @@ def create_app(
     settings: Settings | None = None,
     transcriber: Transcriber | None = None,
     nemo_factory: Callable[[], Any] | None = None,
+    notes_writer: NotesWriter | None = None,
 ) -> FastAPI:
     settings = settings or settings_from_env()
+    if notes_writer is None and settings.llm_url:
+        notes_writer = OpenAIChatClient(
+            settings.llm_url,
+            model=settings.llm_model,
+            api_key=settings.llm_api_key,
+            timeout_seconds=settings.llm_timeout_seconds,
+            max_output_tokens=settings.llm_max_output_tokens,
+            temperature=settings.llm_temperature,
+        )
     if transcriber is None:
         if settings.asr_backend == "nemo":
             transcriber = NemoHealthClient(settings.nemo_url, settings.nemo_api_key)
@@ -57,6 +70,8 @@ def create_app(
         finally:
             sweeper.cancel()
             await transcriber.aclose()
+            if notes_writer is not None:
+                await notes_writer.aclose()
 
     app = FastAPI(title="Mitschrift ASR-Adapter", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.store = store
@@ -78,6 +93,11 @@ def create_app(
     async def _transcriber_error(_: Request, error: TranscriberError) -> JSONResponse:
         log.warning("ASR-Backend (%s): %s", settings.asr_backend, error)
         return _error(503, "asr_unavailable", "Spracherkennung ist gerade nicht verfügbar.")
+
+    @app.exception_handler(NotesError)
+    async def _notes_error(_: Request, error: NotesError) -> JSONResponse:
+        log.warning("Protokoll-Assistent: %s", error)
+        return _error(503, "llm_unavailable", NOTES_UNAVAILABLE)
 
     @app.exception_handler(Exception)
     async def _unexpected(_: Request, error: Exception) -> JSONResponse:
@@ -103,6 +123,7 @@ def create_app(
             "maxSessions": settings.max_sessions,
             "language": settings.language_default,
             "diarization": settings.asr_backend == "nemo" and settings.nemo_speaker_diarization,
+            "notes": notes_writer is not None,
         }
         return JSONResponse(status_code=200 if healthy else 503, content=body)
 
@@ -142,6 +163,55 @@ def create_app(
     async def finish(session_id: str, request: Request) -> dict[str, Any]:
         require_token(request)
         return await store.finish(session_id)
+
+    @app.post("/v1/notes")
+    async def post_notes(request: Request) -> dict[str, Any]:
+        require_token(request)
+        try:
+            body = await request.json()
+        except ValueError:
+            raise ApiError(400, "invalid_request", "Erwartet einen JSON-Body.") from None
+        if not isinstance(body, dict):
+            raise ApiError(400, "invalid_request", "Erwartet ein JSON-Objekt.")
+
+        transcript = body.get("transcript")
+        if not isinstance(transcript, str):
+            raise ApiError(400, "invalid_request", "transcript muss ein String sein.")
+        transcript = transcript.strip()
+        if not transcript:
+            raise ApiError(400, "invalid_request", "transcript darf nicht leer sein.")
+        if len(transcript) > settings.llm_max_input_chars:
+            raise ApiError(413, "transcript_too_long", f"transcript ist länger als {settings.llm_max_input_chars} Zeichen.")
+
+        language = body.get("language", "de")
+        if language is None or language == "auto":
+            language = "de"
+        if not isinstance(language, str):
+            raise ApiError(400, "invalid_request", "language muss ein String sein.")
+        language = language.strip().lower() or "de"
+        if language not in NOTES_LANGUAGES:
+            raise ApiError(400, "invalid_language", "language muss de oder en sein.")
+
+        title = body.get("title")
+        if title is not None and not isinstance(title, str):
+            raise ApiError(400, "invalid_request", "title muss ein String sein.")
+        recorded_at = body.get("recordedAt")
+        if recorded_at is not None and not isinstance(recorded_at, str):
+            raise ApiError(400, "invalid_request", "recordedAt muss ein String sein.")
+
+        if notes_writer is None:
+            raise NotesError("LLM_URL ist nicht konfiguriert")
+        result = await notes_writer.write_notes(transcript, language, title or None, recorded_at or None)
+        log.info("Protokoll erstellt: %d Zeichen Eingabe, %d Zeichen Ausgabe, %s ms", len(transcript), len(result.notes), result.latency_ms)
+
+        diagnostics: dict[str, Any] = {}
+        if result.latency_ms is not None:
+            diagnostics["latencyMs"] = result.latency_ms
+        if result.prompt_tokens is not None:
+            diagnostics["promptTokens"] = result.prompt_tokens
+        if result.completion_tokens is not None:
+            diagnostics["completionTokens"] = result.completion_tokens
+        return {"notes": result.notes, "model": result.model, "diagnostics": diagnostics}
 
     return app
 

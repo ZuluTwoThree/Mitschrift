@@ -74,6 +74,29 @@ Im NeMo-Modus kann der Adapter Sprecherlabels anfordern. Voraussetzung ist ein m
 
 Bestätigt der Server die Option nicht (kein Diarization-Modell geladen), läuft die Session ohne Sprecher weiter; der Health-Endpunkt meldet die Einstellung unter `diarization`. Grenzen: Die Labels sind generisch und gelten je Session (Reihenfolge des ersten Auftretens), keine Namen, keine Wiedererkennung über Sessions hinweg, bis zu 8 Sprechende; `partial`-Segmente tragen nie einen Sprecher.
 
+## Protokoll-Assistent
+
+`POST /v1/notes` übergibt eine Mitschrift (Transkript als Text) an ein OpenAI-kompatibles LLM (z. B. `llama-server` mit Qwen3) und liefert ein Besprechungsprotokoll in Markdown mit Zusammenfassung, Themen, Entscheidungen, Aufgaben und offenen Punkten. Der Vertrag steht in `docs/api/segment-contract.md`. Ohne `LLM_URL` ist die Funktion aus, `/v1/health` meldet `"notes": false` und der Endpunkt antwortet mit 503 `llm_unavailable`.
+
+| Variable | Standard | Bedeutung |
+| --- | --- | --- |
+| `LLM_URL` | leer | Basis-URL des Chat-Servers, z. B. `http://127.0.0.1:8090`; der Adapter ruft `POST {LLM_URL}/v1/chat/completions` auf. Leer = Funktion aus |
+| `LLM_MODEL` | `local` | Wert für `model` im Request und Fallback für `model` in der Antwort (llama-server ignoriert ihn weitgehend) |
+| `LLM_API_KEY` | leer | Wird als `Authorization: Bearer …` an den LLM-Server geschickt |
+| `LLM_TIMEOUT_SECONDS` | `180` | Timeout je Protokoll-Anfrage |
+| `LLM_MAX_INPUT_CHARS` | `120000` | Längere Transkripte werden mit 413 `transcript_too_long` abgewiesen |
+| `LLM_MAX_OUTPUT_TOKENS` | `2048` | `max_tokens` im Request |
+| `LLM_TEMPERATURE` | `0.2` | `temperature` im Request |
+
+Der Prompt verlangt ein sachliches Protokoll nur aus dem Inhalt der Mitschrift (nichts erfinden, Sprechernamen übernehmen, Fehlendes als „nicht genannt“ kennzeichnen); `<think>`-Blöcke von Reasoning-Modellen werden aus der Antwort entfernt. Transkripte werden nicht protokolliert, Logs enthalten nur Zeichenzahlen und Latenz.
+
+```sh
+curl -s -X POST http://127.0.0.1:8765/v1/notes \
+  -H "Authorization: Bearer $MITSCHRIFT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"transcript": "Anna: Guten Morgen, wir starten mit dem Budget.\nBernd: Ich schicke die Zahlen bis Freitag.", "language": "de", "title": "Jour fixe", "recordedAt": "2026-10-04T10:00:00Z"}'
+```
+
 ## Tests
 
 ```sh

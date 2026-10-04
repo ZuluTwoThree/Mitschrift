@@ -82,5 +82,15 @@ services:
       PORT: "8765"
       WINDOW_SECONDS: ${WINDOW_SECONDS:-12}
       FINALIZE_MARGIN_SECONDS: ${FINALIZE_MARGIN_SECONDS:-3}
+      # Protokoll-Assistent: OpenAI-kompatibler Chat-Endpunkt (z. B. llama-server), leer = aus.
+      # Der LLM-Server muss auf einer Adresse lauschen, die aus dem Container erreichbar ist (nicht nur
+      # 127.0.0.1), z. B. der Docker-Bridge-Adresse oder der Tailnet-Adresse des Hosts;
+      # mit `extra_hosts` unten geht z. B. LLM_URL=http://host.docker.internal:8090.
+      LLM_URL: ${LLM_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-local}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-180}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${ADAPTER_PORT:-8765}:8765"

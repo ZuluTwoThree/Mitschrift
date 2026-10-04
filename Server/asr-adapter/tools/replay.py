@@ -56,6 +56,8 @@ def main() -> int:
     parser.add_argument("--language", default="de")
     parser.add_argument("--realtime", action="store_true", help="Segmente im 2,2-s-Takt senden statt so schnell wie möglich")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--speakers", action="store_true", help="Absätze je Sprecherwechsel ausgeben („Sprecher N: …“), wie der Export der App")
+    parser.add_argument("--notes", action="store_true", help="Danach den Protokoll-Assistenten (/v1/notes) aufrufen und das Protokoll ausgeben")
     args = parser.parse_args()
 
     with wave.open(args.wav, "rb") as handle:
@@ -99,8 +101,34 @@ def main() -> int:
         response.raise_for_status()
         finals.extend(response.json()["final"])
 
-    print(" ".join(segment["text"].strip() for segment in finals if segment["text"].strip()))
+    text = speaker_paragraphs(finals) if args.speakers else " ".join(segment["text"].strip() for segment in finals if segment["text"].strip())
+    print(text)
+    if args.notes:
+        started = time.perf_counter()
+        with httpx.Client(base_url=args.url, timeout=300.0) as client:
+            response = client.post("/v1/notes", json={"transcript": text, "language": args.language}, headers=headers)
+        if response.status_code != 200:
+            print(f"notes: HTTP {response.status_code} {response.text}", file=sys.stderr)
+            return 1
+        body = response.json()
+        print(f"\n--- Protokoll ({body.get('model')}, {1000 * (time.perf_counter() - started):.0f} ms, {body.get('diagnostics')}) ---")
+        print(body["notes"])
     return 0
+
+
+def speaker_paragraphs(finals: list[dict]) -> str:
+    """Wie `Transcript.finalTextWithSpeakers` in der App: neuer Absatz je Sprecherwechsel."""
+    paragraphs: list[tuple[str | None, list[str]]] = []
+    for segment in finals:
+        text = segment["text"].strip()
+        if not text:
+            continue
+        speaker = segment.get("speaker")
+        if paragraphs and paragraphs[-1][0] == speaker:
+            paragraphs[-1][1].append(text)
+        else:
+            paragraphs.append((speaker, [text]))
+    return "\n".join(f"Sprecher {speaker}: {' '.join(words)}" if speaker else " ".join(words) for speaker, words in paragraphs)
 
 
 if __name__ == "__main__":
