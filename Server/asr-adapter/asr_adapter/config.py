@@ -17,6 +17,15 @@ class Settings:
     language_default: str = "de"
     model_name: str = "unbekannt"
 
+    # Backend: "whisper" (Rollpuffer vor whisper-server) oder "nemo" (Realtime-WebSocket von nemo-speech serve)
+    asr_backend: str = "whisper"
+    nemo_url: str = "ws://127.0.0.1:8095"
+    nemo_api_key: str | None = None
+    nemo_endpointing_ms: int = 700
+    # Nach dem Senden eines Segments so lange auf Verarbeitung warten (0 = nicht warten, höchstens 2 s)
+    nemo_settle_seconds: float = 0.0
+    nemo_finish_timeout_seconds: float = 15.0
+
     # Audioformat
     sample_rate: int = 16_000
     overlap_seconds: float = 0.3
@@ -56,7 +65,13 @@ def settings_from_env() -> Settings:
     token = os.environ.get("MITSCHRIFT_TOKEN", "").strip()
     if not token:
         raise ConfigError("MITSCHRIFT_TOKEN ist nicht gesetzt.")
+    backend = os.environ.get("ASR_BACKEND", "whisper").strip().lower() or "whisper"
+    if backend not in {"whisper", "nemo"}:
+        raise ConfigError("ASR_BACKEND muss whisper oder nemo sein.")
     model_path = os.environ.get("MODEL", "")
+    if backend == "nemo":
+        model_path = os.environ.get("NEMO_ASR_MODEL", "") or model_path
+    settle = min(max(_env_float("NEMO_SETTLE_SECONDS", 0.0), 0.0), 2.0)
     return Settings(
         token=token,
         whisper_url=os.environ.get("WHISPER_URL", "http://127.0.0.1:8080").rstrip("/"),
@@ -64,6 +79,12 @@ def settings_from_env() -> Settings:
         port=_env_int("PORT", 8765),
         language_default=os.environ.get("LANGUAGE", "de"),
         model_name=os.path.basename(model_path) if model_path else "unbekannt",
+        asr_backend=backend,
+        nemo_url=os.environ.get("NEMO_URL", "ws://127.0.0.1:8095").rstrip("/"),
+        nemo_api_key=os.environ.get("NEMO_API_KEY") or None,
+        nemo_endpointing_ms=_env_int("NEMO_ENDPOINTING_MS", 700),
+        nemo_settle_seconds=settle,
+        nemo_finish_timeout_seconds=_env_float("NEMO_FINISH_TIMEOUT_SECONDS", 15.0),
         window_seconds=_env_float("WINDOW_SECONDS", 12.0),
         finalize_margin_seconds=_env_float("FINALIZE_MARGIN_SECONDS", 3.0),
         finalize_min_gap_seconds=_env_float("FINALIZE_MIN_GAP_SECONDS", 0.2),

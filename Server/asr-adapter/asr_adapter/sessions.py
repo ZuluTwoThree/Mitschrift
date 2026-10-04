@@ -9,6 +9,7 @@ from typing import Any, Callable
 import numpy as np
 
 from .config import Settings
+from .nemo_engine import NemoSessionEngine
 from .whisper_client import RawSegment, Transcriber
 
 log = logging.getLogger("asr_adapter.sessions")
@@ -44,6 +45,11 @@ class Session:
     responses: dict[int, dict[str, Any]] = field(default_factory=dict)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     inflight: int = 0
+    # Nur im NeMo-Backend: offene Realtime-Sitzung, gesendete Audiodauer und Zeitachsenversatz
+    nemo: Any = None
+    sent_seconds: float = 0.0
+    last_final_end: float = 0.0
+    nemo_offset: float = 0.0
 
     @property
     def buffer_end(self) -> float:
@@ -130,12 +136,22 @@ class Session:
 
 
 class SessionStore:
-    def __init__(self, settings: Settings, transcriber: Transcriber, now: Callable[[], float] = time.monotonic) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        transcriber: Transcriber,
+        now: Callable[[], float] = time.monotonic,
+        nemo_factory: Callable[[], Any] | None = None,
+    ) -> None:
         self._settings = settings
         self._transcriber = transcriber
         self._now = now
         self._sessions: dict[str, Session] = {}
         self._lock = asyncio.Lock()
+        # Im NeMo-Backend übernimmt die Engine Inferenz und Finalisierung; der Whisper-Pfad bleibt unverändert.
+        self._engine: NemoSessionEngine | None = None
+        if settings.asr_backend == "nemo":
+            self._engine = NemoSessionEngine(settings, nemo_factory)
 
     @property
     def active_count(self) -> int:
@@ -177,6 +193,13 @@ class SessionStore:
         if self._now() - session.created_at > self._settings.max_session_seconds:
             await self._finish_locked(session)
             raise SessionError(409, "session_finished", "Maximale Sessiondauer erreicht.")
+
+        if self._engine is not None:
+            response = await self._engine.process(session, sequence, samples)
+            session.last_sequence = sequence
+            session.last_activity = self._now()
+            session.responses[sequence] = response
+            return response
 
         # Zustand sichern: Schlägt die Inferenz fehl (503, Client wiederholt), darf das Audio nicht
         # doppelt im Puffer landen.
@@ -228,7 +251,9 @@ class SessionStore:
             return session.finish_response
         final: list[dict[str, Any]] = []
         min_samples = int(0.1 * self._settings.sample_rate)
-        if len(session.buffer) > min_samples:
+        if self._engine is not None:
+            final = await self._engine.finish(session)
+        elif len(session.buffer) > min_samples:
             raw = await self._transcriber.transcribe(session.buffer, session.language)
             final, _ = session.split(raw, finalize_all=True)
         else:
