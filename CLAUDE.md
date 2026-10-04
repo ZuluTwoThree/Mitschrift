@@ -12,6 +12,7 @@ Native macOS-App (SwiftUI/AppKit) zum lokalen Aufnehmen und Transkribieren mit w
 - Integrationstest gegen einen laufenden Adapter (sonst übersprungen): `MITSCHRIFT_ADAPTER_URL=http://127.0.0.1:8765 MITSCHRIFT_ADAPTER_TOKEN=<token> MITSCHRIFT_TEST_WAV=<16-kHz-WAV> swift test --filter AdapterIntegrationTests`; Testclip z. B. mit `say -v Anna -o clip.aiff "…"` und `ffmpeg -i clip.aiff -ar 16000 -ac 1 -c:a pcm_s16le clip.wav`
 - Simulator mit lokalem Adapter (nur Debug-Build): `SIMCTL_CHILD_MITSCHRIFT_DEV_ENDPOINT=http://127.0.0.1:8765 SIMCTL_CHILD_MITSCHRIFT_DEV_TOKEN=<token> xcrun simctl launch <udid> io.github.zulutwothree.mitschrift.ios`; `http` ist nur für Loopback-Adressen erlaubt
 - `zsh Scripts/build-ios.sh` – iOS-App für den Simulator bauen (XcodeGen + xcodebuild); `… device` für das Gerät, braucht `ios/Local.xcconfig` mit `DEVELOPMENT_TEAM` (Vorlage: `ios/Local.xcconfig.example`)
+- `zsh Scripts/make-ios-icon.sh` – iOS-App-Icon aus `Tools/IOSIconMaker.swift` neu zeichnen (schreibt `ios/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`, eingecheckt)
 - Typecheck wie in CI (`.github/workflows/verify.yml`): `swiftc -typecheck` über `Sources/MitschriftCore/**/*.swift` und `Sources/MitschriftMac/*.swift` mit `-module-name Mitschrift`
 
 ## Voraussetzungen
