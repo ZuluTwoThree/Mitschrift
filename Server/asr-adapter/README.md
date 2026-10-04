@@ -29,6 +29,9 @@ MODEL=../../Models/ggml-small.bin ./run.sh
 | `THREADS` | `4` | Threads für whisper.cpp |
 | `HOST` / `PORT` | `127.0.0.1` / `8765` | Adresse des Adapters |
 | `WHISPER_PORT` | `8080` | Port von `whisper-server` |
+| `WHISPER_ARGS` | `-sns -bs 5` | Optionen für `whisper-server`: Nicht-Sprache-Tokens unterdrücken (sonst liefert `small` bei Hintergrundmusik Fenster wie `[Musik]` statt Text) und Beam-Suche. Kostet rund 100 ms Latenz pro Fenster |
+| `FINALIZE_MIN_GAP_SECONDS` / `FINALIZE_FORCE_SECONDS` | `0.2` / `8.0` | Finalisierung nur an Pausen, Satzenden oder nach Zwangsfrist; dazu Überlaufschutz ab 7 s vor Pufferende |
+| `PROMPT_MAX_CHARS` | `0` | Zuletzt finalisierten Text als Whisper-Prompt mitgeben. Aus, weil es in der Messung die Wortfehlerrate verschlechterte (13,3 % → 19,5 % gegenüber Offline-Transkription) |
 | `WINDOW_SECONDS` | `12` | Rollpuffer je Session |
 | `FINALIZE_MARGIN_SECONDS` | `3` | Abstand zum Pufferende, ab dem Segmente final sind |
 | `MAX_SESSIONS` | `4` | Parallele Sessions |
@@ -90,3 +93,33 @@ curl -s -X POST http://127.0.0.1:8765/v1/live-transcriptions/segments \
 - Segmente, die mindestens 3 s vor dem Pufferende enden, werden als `final` geliefert und aus dem Puffer entfernt. Der Rest ist `partial` und wird mit der nächsten Antwort ersetzt.
 - Ein erneut gesendetes Segment mit bekannter Sequenznummer liefert die gespeicherte Antwort ohne neue Inferenz.
 - Es werden weder Audio noch Transkripte geschrieben oder protokolliert. Logs enthalten Session-ID, Sequenznummer, Fensterlänge und Latenz.
+
+## Aufnahme nachspielen
+
+`tools/replay.py` schickt eine WAV-Datei (16 kHz, mono, PCM16) segmentweise wie die App an einen laufenden Adapter und gibt den finalen Text aus. Damit lassen sich Aufnahmen vom Gerät reproduzierbar prüfen und mit `whisper-cli` offline vergleichen.
+
+```sh
+uv run python tools/replay.py --token "$MITSCHRIFT_TOKEN" --language de --verbose aufnahme.wav
+```
+
+`--realtime` sendet im 2,2-s-Takt statt so schnell wie möglich; `--verbose` zeigt je Segment Fenster, Latenz und die Zahl finaler und vorläufiger Abschnitte.
+
+Wortfehlerrate gegen eine Offline-Transkription (`whisper-cli -nt -np … > referenz.txt`), `tools/wer.py` kommt mit PR #10:
+
+```sh
+uv run python tools/replay.py --token "$MITSCHRIFT_TOKEN" aufnahme.wav > hypothese.txt
+uv run python tools/wer.py referenz.txt hypothese.txt
+```
+
+## Messungen
+
+Wortfehlerrate der Live-Transkription gegenüber `whisper-cli` offline mit demselben Modell (`small`), Mac mit Apple M3, Replay mit `tools/replay.py`:
+
+| Aufnahme | Standard | `-sns -bs 5` |
+| --- | --- | --- |
+| 48 s Deutsch, Hintergrundmusik | 37,6 % (Anfang als `[Musik]` verworfen) | 10,9 % |
+| 56 s Englisch, durchgehende Rede | 13,3 % | 12,4 % |
+| 10 s Deutsch, Sprachsynthese | 0,0 % | 0,0 % |
+
+Mittlere Latenz pro Fenster rund 600 ms (Standard) bzw. 700 ms (`-sns -bs 5`). Ein Whisper-Prompt aus dem finalen Text (`PROMPT_MAX_CHARS`) verschlechterte das Ergebnis und ist aus. `large-v3-turbo` (q5_0) wurde offline mit Echtzeitfaktor 0,68 gemessen; der Live-Vergleich steht aus, weil der 8-GB-Mac dafür nicht reicht.
+
