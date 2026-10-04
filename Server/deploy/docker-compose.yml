@@ -41,8 +41,9 @@ services:
     profiles: ["nemo"]
     restart: unless-stopped
     command: >
-      serve --host 0.0.0.0 --port 8080
-      --asr.model.path /models/${NEMO_ASR_MODEL:-nemotron-3.5-asr-streaming-0.6b.q8_0.gguf}
+      serve --host 0.0.0.0 --port 8080 --no-ui --access-log
+      --device ${NEMO_DEVICE:-cuda}
+      --asr-model /models/${NEMO_ASR_MODEL:-nemotron-3.5-asr-streaming-0.6b.q8_0.gguf}
       ${NEMO_DIAR_ARGS:-}
       ${NEMO_ARGS:-}
     volumes:
