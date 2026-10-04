@@ -23,6 +23,7 @@ targets:
     platform: iOS
     sources:
       - path: ../Sources/MitschriftIOS
+      - path: Assets.xcassets
     dependencies:
       - package: MitschriftCore
         product: MitschriftCore
@@ -48,5 +49,6 @@ targets:
         CODE_SIGN_STYLE: Automatic
         ENABLE_USER_SCRIPT_SANDBOXING: true
         SWIFT_STRICT_CONCURRENCY: complete
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     scheme:
       testTargets: []
