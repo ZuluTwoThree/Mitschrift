@@ -35,6 +35,32 @@ MODEL=../../Models/ggml-small.bin ./run.sh
 | `SESSION_IDLE_TIMEOUT_SECONDS` | `60` | Inaktive Sessions werden beendet und freigegeben |
 | `WHISPER_TIMEOUT_SECONDS` | `15` | Timeout je Inferenz |
 
+## Backend wählen
+
+Der Adapter kann statt `whisper-server` auch `nemo-speech serve` (NeMo-Speech.cpp, Realtime-WebSocket) ansteuern. Der Vertrag zur App bleibt gleich; im NeMo-Modus entfallen Rollpuffer und Finalisierungsregeln, weil das Modell selbst vorläufige Token und abgeschlossene Äußerungen liefert.
+
+| Variable | Standard | Bedeutung |
+| --- | --- | --- |
+| `ASR_BACKEND` | `whisper` | `whisper` oder `nemo` |
+| `NEMO_URL` | `ws://127.0.0.1:8095` | Basis-URL von `nemo-speech serve`; Pfad `/v1/audio/transcriptions/realtime` wird ergänzt |
+| `NEMO_API_KEY` | leer | Bearer-Key, falls der Server mit `--api-key` läuft |
+| `NEMO_ASR_MODEL` | leer | Nur für die Anzeige im Health-Endpunkt |
+| `NEMO_ENDPOINTING_MS` | `700` | Stille, nach der das Modell eine Äußerung abschließt (`completed` → `final`); `0` schaltet das Session-Feld ab |
+| `NEMO_SETTLE_SECONDS` | `0` | Nach jedem Segment bis zu so lange warten, bis der Server das gesendete Audio verarbeitet hat (höchstens 2 s); `0` antwortet sofort mit dem bisherigen Stand |
+| `NEMO_FINISH_TIMEOUT_SECONDS` | `15` | Wartezeit auf das letzte `completed` beim Abschluss |
+
+Beispiel gegen einen lokalen Server:
+
+```sh
+ASR_BACKEND=nemo NEMO_URL=ws://127.0.0.1:8095 MITSCHRIFT_TOKEN=... uv run uvicorn asr_adapter.app:app --port 8765
+```
+
+Hinweise zum NeMo-Modus:
+
+- Jede Session hält eine WebSocket-Verbindung; `final` sind die `completed`-Äußerungen des Modells, `partial` ist der seit der letzten Äußerung aufgelaufene Text. Greift das Endpointing nicht (durchgehende Rede), kommt bis zum `finish` alles als `partial`; beim Abschluss wird der Rest final.
+- Reißt die Verbindung ab, antwortet der Adapter mit 503; beim nächsten Segment wird neu verbunden, der Text der alten Verbindung ist dann weg (die App markiert das Ergebnis als unvollständig).
+- Nemotron liefert Zahlen ausgeschrieben („einundsechzig, sieben“), solange keine ITN-Grammatik geladen ist.
+
 ## Tests
 
 ```sh
