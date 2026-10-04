@@ -152,7 +152,7 @@ final class RecordingController: ObservableObject {
             let url = audioURL.deletingLastPathComponent()
                 .appendingPathComponent(RecordingNaming.transcriptFileName(forAudioNamed: audioURL.lastPathComponent))
             do {
-                try transcript.fullText.write(to: url, atomically: true, encoding: .utf8)
+                try transcript.exportText.write(to: url, atomically: true, encoding: .utf8)
                 transcriptURL = url
             } catch {
                 incomplete = true

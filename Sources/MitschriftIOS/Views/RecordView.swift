@@ -56,7 +56,7 @@ struct RecordView: View {
         updated.liveIncomplete = false
         let url = result.audioURL.deletingLastPathComponent()
             .appendingPathComponent(RecordingNaming.transcriptFileName(forAudioNamed: result.audioURL.lastPathComponent))
-        if (try? transcript.fullText.write(to: url, atomically: true, encoding: .utf8)) != nil {
+        if (try? transcript.exportText.write(to: url, atomically: true, encoding: .utf8)) != nil {
             updated.transcriptURL = url
         }
         recorder.update(result: updated)
@@ -152,6 +152,18 @@ struct RecordView: View {
 private struct ResultView: View {
     var result: RecordingController.Result
 
+    private var resultText: Text {
+        if result.transcript.isEmpty { return Text("Keine Mitschrift vorhanden.") }
+        var text = LiveTranscriptView.finalText(for: result.transcript)
+        // Vorläufiger Rest (z. B. wenn finish scheiterte) bleibt sichtbar, wie im Export.
+        let partial = result.transcript.partialText
+        if !partial.isEmpty {
+            let separator = result.transcript.finalSegments.isEmpty ? "" : (result.transcript.hasSpeakers ? "\n" : " ")
+            text = text + Text(separator + partial).italic().foregroundColor(.secondary)
+        }
+        return text
+    }
+
     private var incompleteText: String {
         if result.missingSegments > 0 {
             return "Die Live-Übertragung war unvollständig: \(result.missingSegments) Abschnitt(e) fehlen. Die Aufnahme ist lokal gesichert."
@@ -172,7 +184,7 @@ private struct ResultView: View {
                     .foregroundStyle(.orange)
             }
             ScrollView {
-                Text(result.transcript.isEmpty ? "Keine Mitschrift vorhanden." : result.transcript.fullText)
+                resultText
                     .foregroundStyle(result.transcript.isEmpty ? .secondary : .primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
