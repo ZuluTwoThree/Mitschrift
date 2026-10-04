@@ -29,9 +29,11 @@ class FakeWhisper:
     healthy: bool = True
     punctuate: bool = True
     fail_next: int = 0
+    prompts: list[str | None] = field(default_factory=list)
 
-    async def transcribe(self, samples: np.ndarray, language: str) -> list[RawSegment]:
+    async def transcribe(self, samples: np.ndarray, language: str, prompt: str | None = None) -> list[RawSegment]:
         self.calls += 1
+        self.prompts.append(prompt)
         if self.fail_next > 0:
             self.fail_next -= 1
             raise TranscriberError("simulierter Ausfall")

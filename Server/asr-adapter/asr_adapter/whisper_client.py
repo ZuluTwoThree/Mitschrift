@@ -23,7 +23,7 @@ class TranscriberError(RuntimeError):
 
 
 class Transcriber(Protocol):
-    async def transcribe(self, samples: np.ndarray, language: str) -> list[RawSegment]: ...
+    async def transcribe(self, samples: np.ndarray, language: str, prompt: str | None = None) -> list[RawSegment]: ...
 
     async def is_healthy(self) -> bool: ...
 
@@ -36,9 +36,13 @@ class WhisperServerClient:
     def __init__(self, base_url: str, timeout_seconds: float = 15.0) -> None:
         self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout_seconds)
 
-    async def transcribe(self, samples: np.ndarray, language: str) -> list[RawSegment]:
+    async def transcribe(self, samples: np.ndarray, language: str, prompt: str | None = None) -> list[RawSegment]:
         files = {"file": ("segment.wav", write_wav(samples), "audio/wav")}
         data = {"response_format": "verbose_json", "language": language, "temperature": "0"}
+        if prompt:
+            # Vorheriger finaler Text als Kontext: Whisper setzt damit mitten im Satz sauber fort,
+            # statt ein angeschnittenes Fragment am Fensteranfang zu verwerfen.
+            data["prompt"] = prompt
         try:
             response = await self._client.post("/inference", files=files, data=data)
         except httpx.HTTPError as error:
