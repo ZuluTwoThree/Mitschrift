@@ -145,6 +145,10 @@ Prüfung: Testprotokoll mit deutschem Beispielgespräch (Latenz, Echtzeitfaktor)
 - `docs/ops/server-setup.md` (Linux und Mac), `docs/ops/iphone-setup.md`, README-Abschnitt iOS.
 - Optional WP7b: LLM-Nachbearbeitung als separater, abschaltbarer Schritt im Adapter (`POST /v1/postprocess`), der nur Text erhält. Erst nach Abnahme von WP5.
 
+### WP8–WP11 — Neuer Server, Backend-Vergleich, nemo-speech.cpp
+
+Siehe `asr-backend-vergleich.md`: Server mit GPU aufsetzen, whisper.cpp (CUDA) und nemo-speech.cpp parallel betreiben, Modelle an den echten Aufnahmen messen, bei Vorteil ein Riva-gRPC-Streaming-Backend im Adapter ergänzen. Der Vertrag zur App bleibt unverändert.
+
 ### Später: WebSocket-Kanal (Stufe 2)
 
 Nur wenn die gemessene Latenz aus WP5 unzureichend ist. Gleicher Session-/Sequenzvertrag, gleiche Finalisierungslogik.
