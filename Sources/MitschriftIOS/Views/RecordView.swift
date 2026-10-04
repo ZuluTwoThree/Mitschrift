@@ -154,7 +154,14 @@ private struct ResultView: View {
 
     private var resultText: Text {
         if result.transcript.isEmpty { return Text("Keine Mitschrift vorhanden.") }
-        return LiveTranscriptView.finalText(for: result.transcript)
+        var text = LiveTranscriptView.finalText(for: result.transcript)
+        // Vorläufiger Rest (z. B. wenn finish scheiterte) bleibt sichtbar, wie im Export.
+        let partial = result.transcript.partialText
+        if !partial.isEmpty {
+            let separator = result.transcript.finalSegments.isEmpty ? "" : (result.transcript.hasSpeakers ? "\n" : " ")
+            text = text + Text(separator + partial).italic().foregroundColor(.secondary)
+        }
+        return text
     }
 
     private var incompleteText: String {
