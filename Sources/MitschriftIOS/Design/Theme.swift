@@ -26,7 +26,7 @@ enum Theme {
     }
 
     static let gutter: CGFloat = 20
-    static let speakerColumn: CGFloat = 30
+    static let speakerColumn: CGFloat = 34
 }
 
 extension View {

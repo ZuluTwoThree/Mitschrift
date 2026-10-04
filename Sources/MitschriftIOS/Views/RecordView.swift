@@ -1,14 +1,19 @@
 import SwiftUI
 import MitschriftCore
 
-/// Hauptansicht: Statusleiste, Protokollblatt und Transportleiste. Einstellungen liegen als Blatt darüber.
+/// Hauptansicht: Statusleiste, Protokollblatt und Transportleiste. Einstellungen und die Liste der
+/// Aufnahmen liegen als Blätter darüber.
 struct RecordView: View {
     @EnvironmentObject private var recorder: RecordingController
     @EnvironmentObject private var settings: SettingsStore
-    @StateObject private var retry = FileTranscriptionTask()
+    @EnvironmentObject private var library: RecordingLibraryModel
     @State private var showPrivacyNotice = false
     @State private var showSettings = false
-    @State private var retrying = false
+    @State private var showRecordings = false
+    /// Die zuletzt beendete Aufnahme mit ihren Aktionen.
+    @State private var current: OpenRecording?
+    /// Ergebnis der Erreichbarkeitsprüfung beim Start einer Live-Aufnahme.
+    @State private var reachabilityHint: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -18,10 +23,8 @@ struct RecordView: View {
                 .padding(.top, 8)
             paper
                 .padding(.horizontal, Theme.gutter)
-            if let result = recorder.result, !recorder.state.isRecording {
-                ResultActions(result: result, retrying: retrying, retryProgress: retry.progress, retryError: retry.error,
-                              canRetry: settings.isConfigured && (result.liveIncomplete || result.transcript.isEmpty),
-                              onRetry: { Task { await retryTranscription(result) } })
+            if let current, !recorder.state.isRecording, recorder.state != .stopping {
+                RecordingPanel(recording: current)
                     .padding(.horizontal, Theme.gutter)
                     .padding(.bottom, 10)
             }
@@ -38,6 +41,14 @@ struct RecordView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(settings)
+        }
+        .sheet(isPresented: $showRecordings) {
+            RecordingsListView()
+                .environmentObject(library)
+                .environmentObject(settings)
+        }
+        .onChange(of: recorder.result) { _, result in
+            syncCurrent(with: result)
         }
         .sheet(isPresented: $showPrivacyNotice) {
             PrivacyNoticeView {
@@ -59,22 +70,25 @@ struct RecordView: View {
                     .foregroundStyle(Theme.paper)
                 Spacer()
                 stateChip
-                Button {
-                    showSettings = true
-                } label: {
-                    Image(systemName: "server.rack")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(Theme.mist)
-                        .frame(width: 36, height: 36)
-                        .background(Theme.ink, in: Circle())
-                }
-                .accessibilityLabel("Server einstellen")
-                .disabled(recorder.state.isRecording)
+                headerButton("list.bullet.rectangle", label: "Aufnahmen") { showRecordings = true }
+                headerButton("server.rack", label: "Server einstellen") { showSettings = true }
+                    .disabled(recorder.state.isRecording)
             }
             Text(serverText)
                 .font(Theme.Fonts.footnote)
-                .foregroundStyle(Theme.mist)
+                .foregroundStyle(reachabilityHint != nil && recorder.state.isRecording ? Theme.amber : Theme.mist)
         }
+    }
+
+    private func headerButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(Theme.mist)
+                .frame(width: 36, height: 36)
+                .background(Theme.ink, in: Circle())
+        }
+        .accessibilityLabel(label)
     }
 
     private var stateChip: some View {
@@ -117,7 +131,11 @@ struct RecordView: View {
         guard settings.isConfigured else { return "Kein Server eingerichtet, die Aufnahme bleibt auf diesem iPhone." }
         let name = settings.selectedServerName ?? "eigenen Server"
         if recorder.state.isRecording || recorder.state == .stopping {
+            if let reachabilityHint, recorder.state.isRecording { return reachabilityHint }
             return "Live über \(name), \(recorder.segmentCount) Abschnitte gesendet"
+        }
+        if let current, current.item.audioURL.pathExtension == "wav", recorder.result?.compressing == true {
+            return "Aufnahme wird komprimiert …"
         }
         return "Live über \(name)"
     }
@@ -128,8 +146,8 @@ struct RecordView: View {
     private var paper: some View {
         if let session = recorder.liveSession, recorder.state.isRecording || recorder.state == .stopping {
             LiveTranscriptView(session: session)
-        } else if let result = recorder.result {
-            TranscriptPaper(transcript: result.transcript, emptyText: "Keine Mitschrift entstanden. Die Aufnahme ist gespeichert.")
+        } else if let current {
+            TranscriptPaper(transcript: current.transcript, emptyText: "Keine Mitschrift entstanden. Die Aufnahme ist gespeichert.")
         } else if recorder.state.isRecording {
             TranscriptPaper(transcript: Transcript(), emptyText: "Die Aufnahme läuft und wird auf diesem iPhone gespeichert.")
         } else {
@@ -199,8 +217,8 @@ struct RecordView: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(recorder.state == .stopping || retrying)
-        .opacity(recorder.state == .stopping || retrying ? 0.5 : 1)
+        .disabled(recorder.state == .stopping || current?.isBusy == true)
+        .opacity(recorder.state == .stopping || current?.isBusy == true ? 0.5 : 1)
         .accessibilityLabel(recorder.state.isRecording ? "Aufnahme stoppen" : "Aufnahme starten")
     }
 
@@ -220,29 +238,59 @@ struct RecordView: View {
     // MARK: Aktionen
 
     private func startRecording() async {
-        await recorder.start(endpoint: settings.endpoint, language: settings.language)
+        reachabilityHint = nil
+        let endpoint = settings.endpoint
+        await recorder.start(endpoint: endpoint, language: settings.language)
+        if let endpoint, recorder.state.isRecording {
+            Task { await checkReachability(endpoint) }
+        }
     }
 
-    private func retryTranscription(_ result: RecordingController.Result) async {
-        guard let endpoint = settings.endpoint else { return }
-        retrying = true
-        defer { retrying = false }
-        guard let transcript = await retry.run(audioURL: result.audioURL, endpoint: endpoint, language: settings.language) else { return }
-        var updated = result
-        updated.transcript = transcript
-        updated.liveIncomplete = false
-        let url = result.audioURL.deletingLastPathComponent()
-            .appendingPathComponent(RecordingNaming.transcriptFileName(forAudioNamed: result.audioURL.lastPathComponent))
-        if (try? transcript.exportText.write(to: url, atomically: true, encoding: .utf8)) != nil {
-            updated.transcriptURL = url
+    /// Prüft beim Start, ob der Server antwortet. Die Aufnahme läuft unabhängig davon; der Hinweis soll
+    /// nur verhindern, dass ein vergessenes Tailscale erst nach einer halben Stunde auffällt.
+    private func checkReachability(_ endpoint: ServerEndpoint) async {
+        let transport = URLSessionLiveTransport(endpoint: endpoint)
+        do {
+            let health = try await transport.health()
+            reachabilityHint = health.isHealthy ? nil : "Server antwortet, Modell lädt noch. Die Aufnahme wird gesichert und später übertragen."
+        } catch let error as LiveTranscriptionError {
+            switch error {
+            case .transport:
+                reachabilityHint = "Server nicht erreichbar, ist Tailscale auf dem iPhone an? Die Aufnahme wird gesichert, die Übertragung versucht es weiter."
+            case .unauthorized:
+                reachabilityHint = "Der Server lehnt den Zugangscode ab. Die Aufnahme wird gesichert."
+            default:
+                reachabilityHint = error.userMessage
+            }
+        } catch {
+            reachabilityHint = error.localizedDescription
         }
-        recorder.update(result: updated)
+    }
+
+    /// Hält das Aufnahme-Objekt der Hauptansicht mit dem Ergebnis des Controllers in Deckung.
+    private func syncCurrent(with result: RecordingController.Result?) {
+        guard let result else { current = nil; return }
+        let id = RecordingNaming.baseName(result.audioURL.lastPathComponent)
+        if let current, current.id == id {
+            if current.item.audioURL != result.audioURL { current.audioMoved(to: result.audioURL) }
+            if !result.compressing { library.reload() }
+            return
+        }
+        let directory = result.audioURL.deletingLastPathComponent()
+        let library = RecordingLibrary(directory: directory)
+        var item = library.items().first { $0.id == id }
+            ?? RecordingItem(audioURL: result.audioURL, createdAt: result.createdAt, fileSize: 0)
+        item.createdAt = result.createdAt
+        current = OpenRecording(item: item, transcript: result.transcript, language: result.language,
+                                incomplete: result.liveIncomplete, missingSegments: result.missingSegments, library: library)
+        self.library.reload()
     }
 
     /// Nur für Gestaltungs-Screenshots im Simulator: `SIMCTL_CHILD_MITSCHRIFT_DEV_SAMPLE=1`.
     private func seedSampleIfRequested() {
         #if DEBUG
         if ProcessInfo.processInfo.environment["MITSCHRIFT_DEV_SHOW_SETTINGS"] == "1" { showSettings = true }
+        if let flag = ProcessInfo.processInfo.environment["MITSCHRIFT_DEV_SHOW_RECORDINGS"], !flag.isEmpty { showRecordings = true }
         guard ProcessInfo.processInfo.environment["MITSCHRIFT_DEV_SAMPLE"] == "1", recorder.result == nil else { return }
         let transcript = Transcript(finalSegments: [
             Segment(start: 0, end: 1.6, text: "Und es rührt an die Grundfesten auch der Union.", speaker: "1"),
@@ -251,8 +299,9 @@ struct RecordView: View {
             Segment(start: 30.4, end: 37.0, text: "Herr Neubacher, spricht Ihnen das ein bisschen aus dem Herzen?", speaker: "1"),
             Segment(start: 37.2, end: 52.4, text: "Ja, also Jens Spahn hätte viele Gründe gehabt, zurückzutreten, meiner Ansicht nach. Die Maskenaffäre ist mir gut in Erinnerung geblieben.", speaker: "3")
         ], partialSegments: [Segment(start: 52.6, end: 55.0, text: "Deswegen muss man mit ihm kein großes")])
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("sample.wav")
-        recorder.update(result: RecordingController.Result(audioURL: url, transcriptURL: nil, transcript: transcript, liveIncomplete: false))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Gespräch-2026-10-04_09-30-00.wav")
+        try? WAVEncoder.wavData(samples: Array(repeating: 0, count: 16_000)).write(to: url)
+        recorder.update(result: RecordingController.Result(audioURL: url, createdAt: Date(), language: "de", transcript: transcript, liveIncomplete: false))
         #endif
     }
 }
@@ -267,78 +316,5 @@ private struct PulseWhen: ViewModifier {
             .opacity(active ? (on ? 0.35 : 1) : 1)
             .animation(active ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : .default, value: on)
             .onChange(of: active, initial: true) { _, isActive in on = isActive }
-    }
-}
-
-/// Aktionen zum Ergebnis: Hinweis auf Lücken, Nachreichen, Export.
-private struct ResultActions: View {
-    var result: RecordingController.Result
-    var retrying: Bool
-    var retryProgress: Double
-    var retryError: String?
-    var canRetry: Bool
-    var onRetry: () -> Void
-
-    private var incompleteText: String {
-        if result.missingSegments > 0 {
-            return "Live-Übertragung unvollständig, \(result.missingSegments) Abschnitte fehlen. Die Aufnahme ist gesichert."
-        }
-        return "Live-Übertragung unvollständig. Die Aufnahme ist gesichert."
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if result.liveIncomplete {
-                Text(incompleteText)
-                    .font(Theme.Fonts.footnote)
-                    .foregroundStyle(Theme.amber)
-            }
-            if retrying {
-                ProgressView(value: retryProgress) {
-                    Text("Aufnahme wird nachträglich übertragen")
-                        .font(Theme.Fonts.footnote)
-                        .foregroundStyle(Theme.mist)
-                }
-                .tint(Theme.mint)
-            } else if let retryError {
-                Text(retryError)
-                    .font(Theme.Fonts.footnote)
-                    .foregroundStyle(Theme.amber)
-            }
-            HStack(spacing: 10) {
-                if canRetry && !retrying {
-                    Button("Nachträglich transkribieren", action: onRetry)
-                        .buttonStyle(PaperButtonStyle(prominent: true))
-                }
-                if let transcriptURL = result.transcriptURL {
-                    ShareLink(item: transcriptURL) {
-                        Label("Mitschrift teilen", systemImage: "square.and.arrow.up")
-                    }
-                    .buttonStyle(PaperButtonStyle(prominent: false))
-                }
-                ShareLink(item: result.audioURL) {
-                    Label("Audio teilen", systemImage: "waveform")
-                }
-                .buttonStyle(PaperButtonStyle(prominent: false))
-            }
-        }
-    }
-}
-
-/// Ruhige Knöpfe auf dem Blatt: Umriss in Nebel, hervorgehoben in Mint.
-struct PaperButtonStyle: ButtonStyle {
-    var prominent: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(Theme.Fonts.footnote.weight(.semibold))
-            .foregroundStyle(prominent ? Theme.night : Theme.paper)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                Capsule().fill(prominent ? Theme.mint : Theme.ink)
-            )
-            .overlay(Capsule().strokeBorder(prominent ? Color.clear : Theme.mist.opacity(0.35)))
-            .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
