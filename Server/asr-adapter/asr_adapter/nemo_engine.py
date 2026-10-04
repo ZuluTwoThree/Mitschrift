@@ -24,8 +24,11 @@ log = logging.getLogger("asr_adapter.nemo")
 SessionFactory = Callable[[], NemoRealtimeSession]
 
 
-def _segment_json(start: float, end: float, text: str) -> dict[str, Any]:
-    return {"start": round(start, 2), "end": round(end, 2), "text": text}
+def _segment_json(start: float, end: float, text: str, speaker: str | None = None) -> dict[str, Any]:
+    segment: dict[str, Any] = {"start": round(start, 2), "end": round(end, 2), "text": text}
+    if speaker is not None:
+        segment["speaker"] = speaker
+    return segment
 
 
 class NemoSessionEngine:
@@ -37,6 +40,7 @@ class NemoSessionEngine:
                 api_key=settings.nemo_api_key,
                 endpointing_ms=settings.nemo_endpointing_ms or None,
                 sample_rate=settings.sample_rate,
+                speaker_diarization=settings.nemo_speaker_diarization,
             )
         )
 
@@ -121,7 +125,7 @@ class NemoSessionEngine:
     def _collect(self, session: Session, stream: NemoRealtimeSession, *, window_end: float) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         offset = session.nemo_offset
         finals, partial_text = stream.snapshot()
-        final = [_segment_json(offset + f.start, offset + f.end, f.text) for f in finals]
+        final = [_segment_json(offset + f.start, offset + f.end, f.text, f.speaker) for f in finals]
         if final:
             session.last_final_end = max(session.last_final_end, final[-1]["end"])
         partial: list[dict[str, Any]] = []

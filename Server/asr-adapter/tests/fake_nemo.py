@@ -22,6 +22,9 @@ class FakeNemoServer:
     completed_every_seconds: float | None = None
     fail_after_bytes: int | None = None
     reject: bool = False
+    # Sprechertrennung: nur wenn die Session `speaker_diarization` anfordert, bekommen Wörter ein
+    # `speaker`-Feld; der Sprecher wechselt alle `speaker_switch_every_seconds` zwischen 1 und 2.
+    speaker_switch_every_seconds: float | None = None
     sessions: list[dict[str, Any]] = field(default_factory=list)
     received_bytes: int = 0
     connections: int = 0
@@ -49,13 +52,17 @@ class FakeNemoServer:
         utterance_tokens: list[str] = []
         utterance_start = 0.0
         completed_mark = 0.0
+        diarize = False
 
         async def complete(end: float, event_id: str) -> None:
             nonlocal utterance_tokens, utterance_start
             words = []
             for i, token in enumerate(utterance_tokens):
                 start = utterance_start + i * TOKEN_SECONDS
-                words.append({"word": token.strip(), "start": round(start, 2), "end": round(start + TOKEN_SECONDS, 2), "confidence": 1})
+                word: dict[str, Any] = {"word": token.strip(), "start": round(start, 2), "end": round(start + TOKEN_SECONDS, 2), "confidence": 1}
+                if diarize and self.speaker_switch_every_seconds:
+                    word["speaker"] = int(start // self.speaker_switch_every_seconds) % 2 + 1
+                words.append(word)
             await ws.send(json.dumps({
                 "type": "conversation.item.input_audio_transcription.completed",
                 "event_id": event_id,
@@ -91,11 +98,16 @@ class FakeNemoServer:
             event = json.loads(message)
             if event.get("type") == "session.update":
                 self.sessions.append(event.get("session", {}))
+                diarize = bool(event.get("session", {}).get("speaker_diarization")) and self.speaker_switch_every_seconds is not None
                 if self.reject:
                     await ws.send(json.dumps({"type": "error", "error": {"message": "abgelehnt"}}))
                     await ws.close()
                     return
-                await ws.send(json.dumps({"type": "session.updated", "session": event.get("session", {})}))
+                confirmed = dict(event.get("session", {}))
+                if "speaker_diarization" in confirmed:
+                    # Wie der echte Server: ohne Diarization-Modell wird die Option nicht bestätigt.
+                    confirmed["speaker_diarization"] = diarize
+                await ws.send(json.dumps({"type": "session.updated", "session": confirmed}))
             elif event.get("type") == "input_audio_buffer.commit":
                 total = audio_bytes / 2 / SAMPLE_RATE
                 if utterance_tokens:

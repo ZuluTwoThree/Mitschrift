@@ -25,6 +25,8 @@ class Settings:
     # Nach dem Senden eines Segments so lange auf Verarbeitung warten (0 = nicht warten, höchstens 2 s)
     nemo_settle_seconds: float = 0.0
     nemo_finish_timeout_seconds: float = 15.0
+    # Sprecherlabels je Wort anfordern (braucht ein mit --diar-model geladenes Diarization-Modell)
+    nemo_speaker_diarization: bool = False
 
     # Audioformat
     sample_rate: int = 16_000
@@ -56,6 +58,13 @@ def _env_float(name: str, default: float) -> float:
     return float(raw) if raw else default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on", "ja"}
+
+
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
     return int(raw) if raw else default
@@ -85,6 +94,7 @@ def settings_from_env() -> Settings:
         nemo_endpointing_ms=_env_int("NEMO_ENDPOINTING_MS", 700),
         nemo_settle_seconds=settle,
         nemo_finish_timeout_seconds=_env_float("NEMO_FINISH_TIMEOUT_SECONDS", 15.0),
+        nemo_speaker_diarization=_env_bool("NEMO_SPEAKER_DIARIZATION", False),
         window_seconds=_env_float("WINDOW_SECONDS", 12.0),
         finalize_margin_seconds=_env_float("FINALIZE_MARGIN_SECONDS", 3.0),
         finalize_min_gap_seconds=_env_float("FINALIZE_MIN_GAP_SECONDS", 0.2),

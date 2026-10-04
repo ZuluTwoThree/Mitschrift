@@ -196,3 +196,66 @@ async def test_health_reports_backend(nemo: FakeNemoServer) -> None:
 async def test_whisper_health_still_reports_backend(client: httpx.AsyncClient) -> None:
     body = (await client.get("/v1/health")).json()
     assert body["backend"] == "whisper"
+
+
+async def test_session_update_requests_diarization_only_when_enabled(nemo: FakeNemoServer) -> None:
+    session = NemoRealtimeSession(url=nemo.url)
+    await session.open("de")
+    assert "speaker_diarization" not in nemo.sessions[-1]
+    assert session.diarization_active is False
+    await session.close()
+
+    nemo.speaker_switch_every_seconds = 1.0
+    session = NemoRealtimeSession(url=nemo.url, speaker_diarization=True)
+    await session.open("de")
+    assert nemo.sessions[-1]["speaker_diarization"] is True
+    assert session.diarization_active is True
+    await session.close()
+
+
+async def test_unconfirmed_diarization_keeps_working_without_speakers(nemo: FakeNemoServer) -> None:
+    # Kein Diarization-Modell geladen: der Server bestätigt die Option nicht, Audio läuft trotzdem.
+    session = NemoRealtimeSession(url=nemo.url, speaker_diarization=True)
+    await session.open("de")
+    assert session.diarization_active is False
+    await session.feed(b"\0" * (2 * 16_000 * 2))
+    await session.finish(timeout=5.0)
+    finals, _ = session.snapshot()
+    assert len(finals) == 1 and finals[0].speaker is None
+    assert session.failed is None
+
+
+async def test_completed_with_speaker_change_is_split_into_speaker_segments(nemo: FakeNemoServer) -> None:
+    nemo.speaker_switch_every_seconds = 1.0
+    app = create_app(nemo_settings(nemo, nemo_speaker_diarization=True, nemo_settle_seconds=1.0), FakeWhisper())
+    sid = str(uuid.uuid4())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        body = (await post_segment(client, sid, 0, seconds=2.0)).json()
+        assert body["final"] == [], "ohne Endpointing erst beim Abschluss final"
+        assert body["partial"] and "speaker" not in body["partial"][0], "partial nie mit Sprecher"
+        body = (await finish(client, sid)).json()
+    # 2 s Audio → Wörter t0,t1 (0–1 s) Sprecher 1, t2,t3 (1–2 s) Sprecher 2 → zwei Finals
+    assert [(s["speaker"], s["text"]) for s in body["final"]] == [("1", "t0 t1"), ("2", "t2 t3")]
+    assert body["final"][0]["start"] == 0.0 and body["final"][0]["end"] == 1.0
+    assert body["final"][1]["start"] == 1.0 and body["final"][1]["end"] == 2.0
+
+
+async def test_without_diarization_segments_have_no_speaker(nemo_client: httpx.AsyncClient, nemo: FakeNemoServer) -> None:
+    nemo.speaker_switch_every_seconds = 1.0  # Server könnte, die Einstellung fordert es aber nicht an
+    sid = str(uuid.uuid4())
+    await post_segment(nemo_client, sid, 0, seconds=2.0)
+    body = (await finish(nemo_client, sid)).json()
+    assert len(body["final"]) == 1
+    assert "speaker" not in body["final"][0]
+
+
+async def test_health_reports_diarization_flag(nemo: FakeNemoServer) -> None:
+    app = create_app(nemo_settings(nemo, nemo_speaker_diarization=True), FakeWhisper())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        body = (await client.get("/v1/health")).json()
+    assert body["diarization"] is True
+    app = create_app(nemo_settings(nemo), FakeWhisper())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        body = (await client.get("/v1/health")).json()
+    assert body["diarization"] is False
+

@@ -37,6 +37,8 @@ class FinalSegment:
     start: float
     end: float
     text: str
+    # Sprecherlabel ("1", "2", …) aus der Diarization; None ohne Sprechertrennung
+    speaker: str | None = None
 
 
 def language_for_nemo(language: str) -> str | None:
@@ -70,9 +72,12 @@ class NemoRealtimeSession:
     endpointing_ms: int | None = 700
     sample_rate: int = 16_000
     connect_factory: ConnectFactory = _default_connect
+    # Sprecherlabels anfordern; `diarization_active` sagt, ob der Server sie bestätigt hat
+    speaker_diarization: bool = False
 
     audio_processed: float = 0.0
     failed: str | None = None
+    diarization_active: bool = False
     _ws: Any = None
     _reader: asyncio.Task[None] | None = None
     _pending_finals: list[FinalSegment] = field(default_factory=list)
@@ -107,6 +112,8 @@ class NemoRealtimeSession:
                 session["language"] = code
             if self.endpointing_ms:
                 session["endpointing_ms"] = int(self.endpointing_ms)
+            if self.speaker_diarization:
+                session["speaker_diarization"] = True
             await self._ws.send(json.dumps({"type": "session.update", "session": session}))
         except NemoRealtimeError:
             await self.close()
@@ -230,6 +237,10 @@ class NemoRealtimeSession:
     def _handle(self, event: dict[str, Any]) -> None:
         kind = event.get("type", "")
         if kind == "session.updated":
+            confirmed = bool((event.get("session") or {}).get("speaker_diarization"))
+            if self.speaker_diarization and not confirmed:
+                log.warning("nemo-speech hat die Sprechertrennung nicht bestätigt (Diarization-Modell geladen?); weiter ohne Sprecher")
+            self.diarization_active = self.speaker_diarization and confirmed
             self._updated.set()
         elif kind == EVENT_DELTA:
             self._partial += str(event.get("delta") or "")
@@ -242,7 +253,14 @@ class NemoRealtimeSession:
             self._committed.set()
         elif kind == "error":
             detail = event.get("error") or event.get("message") or event
-            self._fail(f"Serverfehler: {json.dumps(detail)[:200]}")
+            text = json.dumps(detail)
+            if self.speaker_diarization and not self._updated.is_set() and "diariz" in text.lower():
+                # Der Server lehnt nur die Sprechertrennung ab (kein Diarization-Modell): ohne weiterarbeiten.
+                log.warning("nemo-speech lehnt die Sprechertrennung ab, weiter ohne Sprecher: %s", text[:200])
+                self.diarization_active = False
+                self._updated.set()
+                return
+            self._fail(f"Serverfehler: {text[:200]}")
         else:
             self._touch(event)
 
@@ -254,6 +272,21 @@ class NemoRealtimeSession:
 
     def _completed(self, event: dict[str, Any]) -> None:
         words = [w for w in (event.get("words") or []) if isinstance(w, dict)]
+        self._partial = ""
+        if words and any(w.get("speaker") is not None for w in words):
+            # Sprechertrennung: je zusammenhängendem Sprecherlauf ein eigenes finales Segment.
+            for run in _speaker_runs(words):
+                start = float(run[0].get("start", self._last_final_end))
+                end = float(run[-1].get("end", start))
+                text = " ".join(str(w.get("word", "")).strip() for w in run).strip()
+                if not text:
+                    continue
+                speaker = run[0].get("speaker")
+                self._pending_finals.append(
+                    FinalSegment(start=start, end=max(end, start), text=text, speaker=str(speaker) if speaker is not None else None)
+                )
+                self._last_final_end = max(self._last_final_end, end)
+            return
         text = str(event.get("transcript") or event.get("text") or "").strip()
         if not text and words:
             text = " ".join(str(w.get("word", "")) for w in words).strip()
@@ -264,10 +297,21 @@ class NemoRealtimeSession:
             processed = event.get("audio_processed")
             start = self._last_final_end
             end = float(processed) if isinstance(processed, (int, float)) else max(self.audio_processed, start)
-        self._partial = ""
         if text:
             self._pending_finals.append(FinalSegment(start=start, end=max(end, start), text=text))
             self._last_final_end = max(self._last_final_end, end)
+
+
+def _speaker_runs(words: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Teilt eine Wortliste in Läufe gleichen Sprechers (Reihenfolge bleibt erhalten)."""
+    runs: list[list[dict[str, Any]]] = []
+    for word in words:
+        speaker = word.get("speaker")
+        if runs and runs[-1][0].get("speaker") == speaker:
+            runs[-1].append(word)
+        else:
+            runs.append([word])
+    return runs
 
 
 class NemoHealthClient:

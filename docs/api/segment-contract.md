@@ -38,11 +38,12 @@ Ohne Token erreichbar, liefert nur Betriebsdaten.
   "modelLoaded": true,
   "activeSessions": 1,
   "maxSessions": 4,
-  "language": "de"
+  "language": "de",
+  "diarization": false
 }
 ```
 
-`status` ist `ok`, `loading` (Modell wird noch geladen, HTTP 503) oder `degraded` (Modell geladen, aber `whisper-server` antwortet nicht, HTTP 503).
+`diarization` sagt, ob der Server Sprecherlabels liefert (siehe `speaker` bei den Segmenten). `status` ist `ok`, `loading` (Modell wird noch geladen, HTTP 503) oder `degraded` (Modell geladen, aber `whisper-server` antwortet nicht, HTTP 503).
 
 ### `POST /v1/live-transcriptions/segments`
 
@@ -92,6 +93,7 @@ Bedeutung der Felder:
 - Zeiten beziehen sich auf die Sessionzeitachse. Sie werden aus Sequenznummer, Segmentlänge und Überlappung berechnet, nicht aus `X-Mitschrift-Captured-At`.
 - Daraus folgt: Die App sendet das Audio einer Session **lückenlos**. Eine clientseitige Sprachaktivitätserkennung darf Segmente nicht auslassen, sondern höchstens durch Stille gleicher Länge ersetzen. Pausen durch Unterbrechungen (Anruf, Siri) werden nicht herausgeschnitten; die Aufnahme pausiert währenddessen auch lokal, die Zeitachse der Session entspricht also der gespeicherten Aufnahme. Ein ausgelassenes Segment führt zu 409 (Sequenzlücke).
 - `diagnostics` ist optional und enthält keine Inhalte.
+- `speaker` (optional, nur in `final`): Sprecherlabel als String (`"1"`, `"2"`, …) in Reihenfolge des ersten Auftretens innerhalb der Session, keine Namen. Liefert das Backend Sprechertrennung, wird eine Äußerung mit Sprecherwechsel in mehrere finale Segmente geteilt. Antworten ohne das Feld bleiben gültig; `partial`-Segmente tragen nie `speaker`.
 
 Idempotenz: Ein Segment mit bereits verarbeiteter `sequence` liefert die gespeicherte Antwort von damals mit HTTP 200. Ein Segment mit einer Sequenznummer, die mehr als 1 über der letzten liegt, wird mit 409 abgelehnt; die App muss Segmente in Reihenfolge senden.
 
