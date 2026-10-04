@@ -7,7 +7,6 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY asr_adapter ./asr_adapter
-COPY tools ./tools
 RUN uv sync --frozen --no-dev
 RUN useradd --system --uid 10001 --no-create-home mitschrift
 USER mitschrift
