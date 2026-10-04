@@ -46,6 +46,21 @@ Nemotron streamt ohne Qualitätsverlust (G137 offline 15,9 % = live 15,9 %). Zah
 
 Live über den Adapter (PR #14, `NEMO_SPEAKER_DIARIZATION=true`, Realtime-Kanal mit `speaker_diarization`): 32 finale Segmente, alle mit Label, Sprecher 1 bis 4; Äußerungen mit Wechsel werden in Sprecherläufe geteilt; WER unverändert 15,9 %.
 
+## Langzeittest, 2026-10-04
+
+G137 in Schleife, 61,5 min, Echtzeit-Replay über den Adapter (NeMo-Streaming mit Sprechertrennung, eine Session):
+
+| Messgröße | Ergebnis |
+| --- | --- |
+| Segmente | 1678, alle HTTP 200, `finish` erfolgreich |
+| Antwortzeit Adapter | 48 ms im Mittel, erste 400 Segmente 44 ms, letzte 400 Segmente 46 ms, Maximum 824 ms |
+| Arbeitsspeicher Container | Adapter 52 → 54 MiB, NeMo-Speech 864 → 898 MiB, Whisper unverändert |
+| VRAM | unverändert (NeMo-Speech 3,65 GB mit Diarization, Whisper 1,16 GB) |
+| Fehler in Logs | keine |
+| Wörter | 9332 erkannt zu 9315 erwartet (27 Wiederholungen) |
+
+Auffällig: Die Wortfehlerrate je Wiederholung steigt über die Stunde von rund 19 % (erste fünf) auf rund 26 % (letzte fünf). Ursache wird geprüft (Streaming-Cache des Modells oder Sprechertrennung); mögliche Abhilfe ist ein Neuaufbau des Streams an einer Äußerungsgrenze alle paar Minuten.
+
 ## Mac M3 (8 GB), `small`, Fensterverfahren, 2026-10-03
 
 | Aufnahme | Standard | `-sns -bs 5` |
