@@ -8,20 +8,9 @@ struct MitschriftIOSApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            RecordView()
                 .environmentObject(settings)
                 .environmentObject(recorder)
-        }
-    }
-}
-
-private struct RootView: View {
-    var body: some View {
-        TabView {
-            RecordView()
-                .tabItem { Label("Aufnahme", systemImage: "mic.fill") }
-            SettingsView()
-                .tabItem { Label("Server", systemImage: "network") }
         }
     }
 }
