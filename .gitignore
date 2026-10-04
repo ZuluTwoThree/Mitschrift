@@ -11,3 +11,4 @@ Models/*.bin.*
 ios/*.xcodeproj/
 ios/Local.xcconfig
 ios/Info.plist
+Server/deploy/.env
