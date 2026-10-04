@@ -12,12 +12,12 @@ Stand: 2026-10-03. Gegenstück zu `umsetzungsplan.md`: was nur du tun kannst, na
 - [x] Apple-ID in Xcode hinterlegt (Personal Team)
 - [x] iPhone: Entwicklermodus an, Mac vertraut (iPhone 11 Pro Max, iOS 26.6.2)
 - [x] Tailscale auf dem iPhone installiert und angemeldet
-- [ ] Entscheidungen in Abschnitt 3 bestätigt oder geändert (Gerätetest mit `small` auf dem Mac ist gelaufen)
-- [ ] Hardware-Ausgabe des Linux-Rechners geschickt
-- [ ] SSH-Zugang für Claude entschieden
-- [ ] Tailscale-ACL eingetragen
-- [x] `tailscale serve` auf dem Server aktiviert (Mac, für den ersten Gerätetest)
-- [ ] Token erzeugt und sicher abgelegt
+- [x] Entscheidungen in Abschnitt 3: Server `kiworkstation` (RTX 3090), Docker erlaubt, SSH-Zugang; Modellentscheidung bewusst offen (Messungen in `docs/ops/benchmarks.md`)
+- [x] Hardware der Server erfasst (kiworkstation: i9-11900K, 64 GB, RTX 3090 24 GB; bequietUbuntu: 9800X3D, 60 GB, RTX 5080 16 GB)
+- [x] SSH-Zugang über das Tailnet eingerichtet
+- [ ] Tailscale-ACL eingetragen (Vorlage in `docs/ops/tailscale.md`; derzeit greift nur der Token)
+- [x] `tailscale serve` auf dem Server aktiviert (Mac für den ersten Test, jetzt kiworkstation auf 443 → Adapter)
+- [x] Token erzeugt, liegt in der `.env` des Servers und im Schlüsselbund des iPhones
 
 ## 1. Sofort: macOS und Xcode
 
@@ -111,4 +111,6 @@ Diese Punkte werden erst ab WP5 relevant. Bauen und installieren geht automatisi
 | 2026-10-03 | dito | dito | `small` | dito | 19 s, Sprache „Englisch“ auf deutsches Audio | erwartungsgemäß unbrauchbar |
 | 2026-10-03 | dito | dito | `small` | dito | 48 s, Sprache „Deutsch“, Video mit Hintergrundmusik | 22 Segmente, `finish` ok; Anfang als `[Musik]` verworfen (WER 37,6 %). Mit `whisper-server -sns -bs 5` im Replay 10,9 % (jetzt Standard in `run.sh`) |
 
-Offen für den neuen Server mit mehr RAM: Live-Vergleich mit `large-v3-turbo` (q5_0 liegt unter `Models/`, Download-URL in `Scripts/download-models.sh` ergänzen), danach Modellentscheidung.
+| 2026-10-04 | iPhone 11 Pro Max | kiworkstation (RTX 3090), Docker-Stack, Nemotron 3.5 Streaming + Diarization | `nemotron-3.5-asr-streaming-0.6b` q8 | WLAN, Tailnet, `tailscale serve` | 137 s, Deutsch, 4 Sprechende | Vom iPhone gegen den Server: Transkript angekommen; Replay-Messung WER 15,9 % gegenüber whisper turbo offline, keine Wortverluste, 4 Sprechende erkannt (`docs/ops/benchmarks.md`) |
+
+Offen: handkorrigierte Referenz für die 137-s-Aufnahme, Langzeittest (läuft), Modellentscheidung nach weiteren Aufnahmen. Die App-Version mit Sprecheranzeige, Serverprofilen und eigenem Icon ist seit 2026-10-04 auf dem iPhone installiert.
