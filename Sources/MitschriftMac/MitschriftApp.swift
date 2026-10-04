@@ -17,17 +17,9 @@ struct MitschriftApp: App {
     }
 }
 
-private enum WorkState: Equatable {
-    case idle
-    case recording
-    case transcribing
-    case done
-    case failed(String)
-}
-
 @MainActor
 private final class RecorderTranscriber: NSObject, ObservableObject {
-    @Published var state: WorkState = .idle
+    @Published var state: RecordingWorkState = .idle
     @Published var transcript = ""
     @Published var elapsed: TimeInterval = 0
     @Published var language = "de"
@@ -38,23 +30,10 @@ private final class RecorderTranscriber: NSObject, ObservableObject {
     private var startedAt: Date?
     private var currentAudioURL: URL?
 
-    var isRecording: Bool { state == .recording }
-    var isBusy: Bool { state == .transcribing }
-
-    var statusText: String {
-        switch state {
-        case .idle: return "Bereit für eine neue Aufnahme"
-        case .recording: return "Aufnahme läuft"
-        case .transcribing: return "Whisper erstellt die Mitschrift …"
-        case .done: return "Mitschrift fertig und automatisch gespeichert"
-        case .failed(let message): return message
-        }
-    }
-
-    var elapsedText: String {
-        let total = Int(elapsed)
-        return String(format: "%02d:%02d", total / 60, total % 60)
-    }
+    var isRecording: Bool { state.isRecording }
+    var isBusy: Bool { state.isBusy }
+    var statusText: String { state.statusText }
+    var elapsedText: String { RecordingNaming.elapsedText(elapsed) }
 
     func toggleRecording() {
         isRecording ? stopRecording() : requestPermissionAndStart()
@@ -81,16 +60,13 @@ private final class RecorderTranscriber: NSObject, ObservableObject {
 
     private func startRecording() {
         do {
-            let directory = try recordingsDirectory()
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "de_DE")
-            formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-            let url = directory.appendingPathComponent("Gespräch-\(formatter.string(from: Date())).wav")
+            let directory = try RecordingsDirectory.url()
+            let url = directory.appendingPathComponent(RecordingNaming.recordingFileName(for: Date()))
             let settings: [String: Any] = [
                 AVFormatIDKey: Int(kAudioFormatLinearPCM),
-                AVSampleRateKey: 16_000.0,
-                AVNumberOfChannelsKey: 1,
-                AVLinearPCMBitDepthKey: 16,
+                AVSampleRateKey: Double(WAVEncoder.sampleRate),
+                AVNumberOfChannelsKey: WAVEncoder.channels,
+                AVLinearPCMBitDepthKey: WAVEncoder.bitsPerSample,
                 AVLinearPCMIsFloatKey: false,
                 AVLinearPCMIsBigEndianKey: false
             ]
@@ -143,115 +119,26 @@ private final class RecorderTranscriber: NSObject, ObservableObject {
     }
 
     private func transcribe(_ audioURL: URL) {
-        guard let executable = whisperExecutable() else {
-            state = .failed("Die lokale Whisper-Engine wurde nicht gefunden. Bitte installiere whisper.cpp mit Homebrew.")
-            return
-        }
-        guard let model = modelURL(named: modelName) else {
-            state = .failed("Das gewählte Whisper-Sprachmodell fehlt im App-Paket.")
-            return
-        }
-
-        let nativeFormats = Set(["wav", "mp3", "flac", "ogg"])
-        let needsConversion = !nativeFormats.contains(audioURL.pathExtension.lowercased())
-        let converter = needsConversion ? ffmpegExecutable() : nil
-        if needsConversion && converter == nil {
-            state = .failed("Für M4A-Dateien wird FFmpeg benötigt. Bitte installiere es mit Homebrew.")
-            return
-        }
-
-        let outputURL: URL
+        let outputDirectory: URL
         do {
-            let directory = try recordingsDirectory()
-            let sourceName = audioURL.deletingPathExtension().lastPathComponent
-            outputURL = directory.appendingPathComponent("\(sourceName)-Mitschrift.txt")
+            outputDirectory = try RecordingsDirectory.url()
         } catch {
             state = .failed("Der Mitschrift-Ordner konnte nicht angelegt werden: \(error.localizedDescription)")
             return
         }
 
-        state = .transcribing
-        let outputPrefix = outputURL.deletingPathExtension().path
-        try? FileManager.default.removeItem(at: outputURL)
+        let engine = LocalWhisperEngine(modelName: modelName, outputDirectory: outputDirectory)
         let selectedLanguage = language
+        state = .transcribing
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var temporaryAudioURL: URL?
+        Task { [weak self] in
             do {
-                let whisperInput: URL
-                if let converter {
-                    let converted = FileManager.default.temporaryDirectory
-                        .appendingPathComponent("Mitschrift-\(UUID().uuidString).wav")
-                    temporaryAudioURL = converted
-                    try Self.runProcess(
-                        executable: converter,
-                        arguments: [
-                            "-y", "-hide_banner", "-loglevel", "error",
-                            "-i", audioURL.path,
-                            "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
-                            converted.path
-                        ],
-                        failureMessage: "Die Audiodatei konnte nicht in WAV umgewandelt werden."
-                    )
-                    whisperInput = converted
-                } else {
-                    whisperInput = audioURL
-                }
-
-                try Self.runProcess(
-                    executable: executable,
-                    arguments: [
-                        "-m", model.path,
-                        "-f", whisperInput.path,
-                        "-l", selectedLanguage,
-                        "-otxt", "-of", outputPrefix,
-                        "-nt", "-np", "-ng"
-                    ],
-                    failureMessage: "Whisper konnte die Audiodatei nicht transkribieren."
-                )
-
-                let text = try String(contentsOf: outputURL, encoding: .utf8)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if let temporaryAudioURL {
-                    try? FileManager.default.removeItem(at: temporaryAudioURL)
-                }
-                Task { @MainActor in
-                    self?.transcript = text
-                    self?.state = .done
-                }
+                let text = try await engine.transcribe(fileURL: audioURL, language: selectedLanguage)
+                self?.transcript = text
+                self?.state = .done
             } catch {
-                if let temporaryAudioURL {
-                    try? FileManager.default.removeItem(at: temporaryAudioURL)
-                }
-                Task { @MainActor in
-                    self?.state = .failed("Transkriptionsfehler: \(error.localizedDescription)")
-                }
+                self?.state = .failed("Transkriptionsfehler: \(error.localizedDescription)")
             }
-        }
-    }
-
-    nonisolated private static func runProcess(
-        executable: URL,
-        arguments: [String],
-        failureMessage: String
-    ) throws {
-        let process = Process()
-        let errorPipe = Pipe()
-        process.executableURL = executable
-        process.arguments = arguments
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = errorPipe
-        try process.run()
-        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            let diagnostics = String(data: errorData, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            throw NSError(
-                domain: "Mitschrift",
-                code: Int(process.terminationStatus),
-                userInfo: [NSLocalizedDescriptionKey: diagnostics.isEmpty ? failureMessage : "\(failureMessage)\n\(diagnostics)"]
-            )
         }
     }
 
@@ -275,42 +162,10 @@ private final class RecorderTranscriber: NSObject, ObservableObject {
     }
 
     func showRecordings() {
-        if let directory = try? recordingsDirectory() {
+        if let directory = try? RecordingsDirectory.url() {
             NSWorkspace.shared.open(directory)
         }
     }
-
-    private func recordingsDirectory() throws -> URL {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let directory = documents.appendingPathComponent("Mitschrift", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
-    }
-
-    private func whisperExecutable() -> URL? {
-        let candidates = [
-            Bundle.main.url(forResource: "whisper-cli", withExtension: nil, subdirectory: "bin"),
-            URL(fileURLWithPath: "/opt/homebrew/bin/whisper-cli"),
-            URL(fileURLWithPath: "/usr/local/bin/whisper-cli")
-        ].compactMap { $0 }
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
-    }
-
-    private func ffmpegExecutable() -> URL? {
-        let candidates = [
-            URL(fileURLWithPath: "/opt/homebrew/bin/ffmpeg"),
-            URL(fileURLWithPath: "/usr/local/bin/ffmpeg")
-        ]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
-    }
-
-    private func modelURL(named name: String) -> URL? {
-        if let bundled = Bundle.main.url(forResource: "ggml-\(name)", withExtension: "bin", subdirectory: "models") {
-            return bundled
-        }
-        return nil
-    }
-
 }
 
 private struct ContentView: View {
@@ -398,7 +253,7 @@ private struct ContentView: View {
                             .frame(width: 8, height: 8)
                     }
                     Text(engine.statusText)
-                        .foregroundStyle(statusColor)
+                        .foregroundStyle(engine.state.isFailed ? Color.orange : Color.secondary)
                         .lineLimit(2)
                 }
             }
@@ -450,10 +305,5 @@ private struct ContentView: View {
         .background(.white.opacity(0.065), in: RoundedRectangle(cornerRadius: 20))
         .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.09)))
         .frame(maxHeight: .infinity)
-    }
-
-    private var statusColor: Color {
-        if case .failed = engine.state { return .orange }
-        return .secondary
     }
 }

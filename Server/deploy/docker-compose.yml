@@ -1,0 +1,96 @@
+# Mitschrift-Serverstack: whisper.cpp (CUDA), NeMo-Speech.cpp und der Adapter.
+# Alle Dienste binden nur an 127.0.0.1; nach außen geht ausschließlich der Adapter über `tailscale serve`.
+# Konfiguration in .env (siehe .env.example). Modelle liegen unter ${MODELS_DIR}.
+#
+#   docker compose --profile whisper --profile nemo up -d      # beide Backends für den Vergleich
+#   docker compose --profile whisper up -d                      # nur Whisper
+#   docker compose logs -f adapter
+
+services:
+  whisper:
+    image: ghcr.io/ggml-org/whisper.cpp:main-cuda
+    profiles: ["whisper"]
+    restart: unless-stopped
+    # Das Image hat ENTRYPOINT ["bash","-c"]; damit die ganze Zeile als ein Skript ankommt,
+    # wird der Entrypoint hier explizit gesetzt und der Befehl als ein einziges Element übergeben.
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        whisper-server --host 0.0.0.0 --port 8080
+        -m /models/${WHISPER_MODEL:-ggml-large-v3-turbo-q5_0.bin}
+        -l ${LANGUAGE:-de} -t ${WHISPER_THREADS:-8} ${WHISPER_ARGS:--sns -bs 5}
+    volumes:
+      - ${MODELS_DIR:-./models}:/models:ro
+    ports:
+      - "127.0.0.1:${WHISPER_PORT:-8092}:8080"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:8080/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+
+  nemo-speech:
+    build:
+      context: ./nemo-speech
+      args:
+        NEMO_SPEECH_FLAVOR: ${NEMO_SPEECH_FLAVOR:-cuda}
+    image: mitschrift/nemo-speech:0.2.0-${NEMO_SPEECH_FLAVOR:-cuda}
+    profiles: ["nemo"]
+    restart: unless-stopped
+    command: >
+      serve --host 0.0.0.0 --port 8080 --no-ui --access-log
+      --device ${NEMO_DEVICE:-cuda}
+      --asr-model /models/${NEMO_ASR_MODEL:-nemotron-3.5-asr-streaming-0.6b.q8_0.gguf}
+      --itn-model-dir /opt/nemo-speech/itn/itn_configs
+      --asr.endpointing.enable=true --asr.endpointing.stop_history_eou_ms=${NEMO_ENDPOINTING_MS:-700}
+      ${NEMO_DIAR_ARGS:-}
+      ${NEMO_ARGS:-}
+    volumes:
+      - ${MODELS_DIR:-./models}:/models:ro
+    ports:
+      - "127.0.0.1:${NEMO_PORT:-8095}:8080"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  adapter:
+    build:
+      context: ../asr-adapter
+    image: mitschrift/asr-adapter:local
+    restart: unless-stopped
+    environment:
+      MITSCHRIFT_TOKEN: ${MITSCHRIFT_TOKEN:?MITSCHRIFT_TOKEN in .env setzen}
+      ASR_BACKEND: ${ASR_BACKEND:-whisper}
+      WHISPER_URL: http://whisper:8080
+      MODEL: ${WHISPER_MODEL:-ggml-large-v3-turbo-q5_0.bin}
+      NEMO_URL: ws://nemo-speech:8080
+      NEMO_ASR_MODEL: ${NEMO_ASR_MODEL:-nemotron-3.5-asr-streaming-0.6b.q8_0.gguf}
+      NEMO_ENDPOINTING_MS: ${NEMO_ENDPOINTING_MS:-700}
+      NEMO_SPEAKER_DIARIZATION: ${NEMO_SPEAKER_DIARIZATION:-false}
+      HOST: 0.0.0.0
+      PORT: "8765"
+      WINDOW_SECONDS: ${WINDOW_SECONDS:-12}
+      FINALIZE_MARGIN_SECONDS: ${FINALIZE_MARGIN_SECONDS:-3}
+      # Protokoll-Assistent: OpenAI-kompatibler Chat-Endpunkt (z. B. llama-server), leer = aus.
+      # Der LLM-Server muss auf einer Adresse lauschen, die aus dem Container erreichbar ist (nicht nur
+      # 127.0.0.1), z. B. der Docker-Bridge-Adresse oder der Tailnet-Adresse des Hosts;
+      # mit `extra_hosts` unten geht z. B. LLM_URL=http://host.docker.internal:8090.
+      LLM_URL: ${LLM_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-local}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-180}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${ADAPTER_PORT:-8765}:8765"
