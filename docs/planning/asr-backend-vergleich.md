@@ -43,6 +43,7 @@ Aufnahmen: die drei vorhandenen (48 s Deutsch mit Musik, 56 s Englisch, 10 s Spr
 | --- | --- | --- |
 | whisper.cpp CUDA | small, medium, large-v3-turbo q5_0, large-v3-turbo f16, large-v3 | WER, Latenz pro Fenster, RTF, Halluzinationen |
 | nemo-speech.cpp oder parakeet.cpp | Parakeet-TDT 0.6B v3, ggf. Canary 1B v2 | WER, Latenz bis final, Halluzinationen, Streaming-Verhalten |
+| nemo-speech.cpp | Nemotron 3 Diarization (WP12) | Diarization Error Rate an der Zwei-Sprecher-Aufnahme, Latenz offline und streaming |
 
 Jede Zeile einmal mit `--realtime` (Latenzbild) und einmal so schnell wie möglich (Durchsatz). Ergebnis als Tabelle in `docs/ops/benchmarks.md`.
 
@@ -65,6 +66,19 @@ Prüfung: Replay der Messaufnahmen über `ASR_BACKEND=riva` erreicht die WER aus
 - systemd-Units bzw. `docker compose` für Backend und Adapter, Neustart bei Absturz, Logrotation, keine Inhalte im Log.
 - `docs/ops/server-setup.md`: Installation beider Backends, Modellablage, Updates.
 - Whisper bleibt als Fallback konfiguriert, Umschalten per Umgebungsvariable.
+
+### WP12 — Sprechertrennung mit Nemotron 3 Diarization (optional, nach WP9)
+
+Nemotron 3 Diarization ist ein offenes Streaming-Sortformer-Modell mit rund 100 M Parametern für bis zu 8 Sprechende, Labels in Reihenfolge des ersten Auftretens, offline oder in Echtzeit mit Pufferlatenz ab 80 ms. nemo-speech.cpp führt es in derselben Laufzeit wie die ASR-Modelle aus (GGUF-Architektur `sortformer`). Das Konzept in Issue #1 nennt Sprechertrennung als Nicht-Ziel der ersten Version; sie kommt deshalb erst nach der Backend-Entscheidung und zunächst als Nachbearbeitung.
+
+- **Stufe 1, offline nach `finish`:** Der Adapter lässt die gespeicherte Sitzung (Audio bleibt dafür bis zum Abschluss im Speicher, danach gelöscht) durch das Diarization-Modell laufen und ordnet jedem finalen Abschnitt über die Wortzeitstempel den Sprecher mit dem größten Zeitanteil zu. Ergebnis: Mitschrift mit Sprecherwechseln („Sprecher 1:“, „Sprecher 2:“).
+- **Stufe 2, live:** Die Streaming-Variante liefert Sprecherlabels pro Frame mit niedriger Latenz; sie läuft parallel zum ASR-Stream, Labels werden an `partial` und `final` gehängt. Sinnvoll erst, wenn WP10 (Riva-Streaming) steht.
+- **Vertrag:** Segmente bekommen ein optionales Feld `speaker` (String, z. B. `"1"`); Antworten ohne dieses Feld bleiben gültig. Ältere App-Versionen ignorieren es.
+- **App:** Anzeige der Sprecherwechsel in Live- und Ergebnisansicht, optional Umbenennung der Sprecher vor dem Export.
+- **Messung:** Diarization Error Rate (DER) an der Zwei-Sprecher-Aufnahme aus WP9 mit manuell gesetzten Sprecherwechseln; Prüfen, wie oft bei Zwischenrufen und Überlappung die Zuordnung springt.
+- **Grenzen:** Generische Labels, keine Namen; Erkennung derselben Stimme über mehrere Sitzungen hinweg ist nicht vorgesehen. Bei mehr als zwei Sprechenden mit ähnlichen Stimmen steigt die Fehlerrate deutlich.
+
+Prüfung: Zwei-Sprecher-Aufnahme liefert eine Mitschrift mit korrekten Wechseln an mindestens 90 % der manuell markierten Stellen; Latenz der Nachbearbeitung unter 10 % der Aufnahmedauer.
 
 ## Risiken
 
