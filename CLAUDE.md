@@ -23,6 +23,7 @@ macOS 14+, Homebrew mit `whisper.cpp` und `ffmpeg` (`brew install whisper-cpp ff
 
 - `Package.swift` – SwiftPM mit Library `MitschriftCore` und Tests; macOS 14 / iOS 17
 - `Sources/MitschriftCore/` – plattformneutral, nur Foundation/Combine: `Model` (Segment, Transcript, API-Modelle), `Live` (SegmentQueue, LiveTranscriptionSession, URLSession-Transport, WAVEncoder), `Recording` (Zustand, Dateinamen), `Config` (ServerEndpoint; `ServerProfile` + `ServerProfileStore` für mehrere gespeicherte Server, Profile als JSON in UserDefaults, Token je Profil über `TokenStore` im Schlüsselbund, Migration der alten Einzelkonfiguration aus `KeychainEndpointStore`)
+- `Sources/MitschriftIOS/Design/Theme.swift` – Farb- und Schrift-Tokens der iOS-App (Nacht/Tinte/Papier, Koralle nur für Aufnahme, Mint für Live und Sprecher; Serife für die Mitschrift); Debug-Schalter für Screenshots: `MITSCHRIFT_DEV_SAMPLE=1`, `MITSCHRIFT_DEV_SHOW_SETTINGS=1`
 - `Sources/MitschriftIOS/` – iOS-App: `MitschriftIOSApp` (Tabs Aufnahme/Server), `Audio/AudioCaptureEngine` (AVAudioEngine → 16 kHz mono Int16, Unterbrechungen), `Recording/RecordingController` (Berechtigung, WAV-Datei, Segmente), `Settings/` (Serverprofile mit Menüauswahl, Keychain, Verbindungstest), `Views/`
 - `ios/project.yml` – XcodeGen-Definition; `ios/Mitschrift.xcodeproj`, `ios/Info.plist` und `ios/Local.xcconfig` werden erzeugt und sind gitignoriert
 - `Sources/MitschriftMac/` – macOS-App: `MitschriftApp.swift` (UI, Aufnahme) und `LocalWhisperEngine.swift` (`whisper-cli`/`ffmpeg` per `Process`)

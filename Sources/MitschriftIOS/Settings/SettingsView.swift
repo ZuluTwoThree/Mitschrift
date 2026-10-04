@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var settings: SettingsStore
+    @Environment(\.dismiss) private var dismiss
     @State private var confirmDelete = false
 
     var body: some View {
@@ -62,7 +63,7 @@ struct SettingsView: View {
 
                 if let error = settings.saveError {
                     Section {
-                        Text(error).foregroundStyle(.orange)
+                        Text(error).foregroundStyle(Theme.amber)
                     }
                 }
 
@@ -83,7 +84,17 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Server")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fertig") { dismiss() }
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Theme.night)
+            .tint(Theme.coral)
         }
+        .preferredColorScheme(.dark)
     }
 
     @ViewBuilder
@@ -95,11 +106,11 @@ struct SettingsView: View {
             Label("Verbindung wird geprüft …", systemImage: "antenna.radiowaves.left.and.right")
                 .foregroundStyle(.secondary)
         case .ok(let model, let version, let diarization):
-            Label("Verbunden · Modell \(model) · Version \(version)" + (diarization ? " · Sprechertrennung" : ""), systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+            Label("Verbunden mit Modell \(model), Version \(version)" + (diarization ? ", mit Sprechertrennung" : ""), systemImage: "checkmark.circle.fill")
+                .foregroundStyle(Theme.mint)
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Theme.amber)
         }
     }
 }
