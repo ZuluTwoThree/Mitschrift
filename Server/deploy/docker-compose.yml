@@ -77,6 +77,7 @@ services:
       NEMO_URL: ws://nemo-speech:8080
       NEMO_ASR_MODEL: ${NEMO_ASR_MODEL:-nemotron-3.5-asr-streaming-0.6b.q8_0.gguf}
       NEMO_ENDPOINTING_MS: ${NEMO_ENDPOINTING_MS:-700}
+      NEMO_SPEAKER_DIARIZATION: ${NEMO_SPEAKER_DIARIZATION:-false}
       HOST: 0.0.0.0
       PORT: "8765"
       WINDOW_SECONDS: ${WINDOW_SECONDS:-12}

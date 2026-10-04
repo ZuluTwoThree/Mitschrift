@@ -102,6 +102,7 @@ def create_app(
             "activeSessions": store.active_count,
             "maxSessions": settings.max_sessions,
             "language": settings.language_default,
+            "diarization": settings.asr_backend == "nemo" and settings.nemo_speaker_diarization,
         }
         return JSONResponse(status_code=200 if healthy else 503, content=body)
 

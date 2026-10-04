@@ -64,6 +64,16 @@ Hinweise zum NeMo-Modus:
 - Reißt die Verbindung ab, antwortet der Adapter mit 503; beim nächsten Segment wird neu verbunden, der Text der alten Verbindung ist dann weg (die App markiert das Ergebnis als unvollständig).
 - Nemotron liefert Zahlen ausgeschrieben („einundsechzig, sieben“), solange keine ITN-Grammatik geladen ist.
 
+## Sprechertrennung
+
+Im NeMo-Modus kann der Adapter Sprecherlabels anfordern. Voraussetzung ist ein mit `--diar-model` geladenes Diarization-Modell in `nemo-speech serve` (in Compose über `NEMO_DIAR_ARGS=--diar-model /models/Nemotron-3-Diarization.q8_0.gguf`).
+
+| Variable | Standard | Bedeutung |
+| --- | --- | --- |
+| `NEMO_SPEAKER_DIARIZATION` | `false` | `true`: in der Realtime-Session `speaker_diarization` anfordern; jedes finale Segment bekommt `speaker` (`"1"`, `"2"`, …), eine Äußerung mit Sprecherwechsel wird in mehrere Segmente geteilt |
+
+Bestätigt der Server die Option nicht (kein Diarization-Modell geladen), läuft die Session ohne Sprecher weiter; der Health-Endpunkt meldet die Einstellung unter `diarization`. Grenzen: Die Labels sind generisch und gelten je Session (Reihenfolge des ersten Auftretens), keine Namen, keine Wiedererkennung über Sessions hinweg, bis zu 8 Sprechende; `partial`-Segmente tragen nie einen Sprecher.
+
 ## Tests
 
 ```sh
