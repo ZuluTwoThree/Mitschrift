@@ -329,7 +329,9 @@ class NemoHealthClient:
             response = await self._client.get("/v1/models")
         except httpx.HTTPError:
             return False
-        return response.status_code < 500
+        # Nur eine erfolgreiche Antwort gilt als gesund: 401/403 (falscher API-Key) oder 404 würden
+        # beim WebSocket-Handshake ebenfalls scheitern und müssen als "degraded" sichtbar sein.
+        return response.status_code == 200
 
     async def aclose(self) -> None:
         await self._client.aclose()
