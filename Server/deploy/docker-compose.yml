@@ -71,8 +71,12 @@ services:
     restart: unless-stopped
     environment:
       MITSCHRIFT_TOKEN: ${MITSCHRIFT_TOKEN:?MITSCHRIFT_TOKEN in .env setzen}
+      ASR_BACKEND: ${ASR_BACKEND:-whisper}
       WHISPER_URL: http://whisper:8080
       MODEL: ${WHISPER_MODEL:-ggml-large-v3-turbo-q5_0.bin}
+      NEMO_URL: ws://nemo-speech:8080
+      NEMO_ASR_MODEL: ${NEMO_ASR_MODEL:-nemotron-3.5-asr-streaming-0.6b.q8_0.gguf}
+      NEMO_ENDPOINTING_MS: ${NEMO_ENDPOINTING_MS:-700}
       HOST: 0.0.0.0
       PORT: "8765"
       WINDOW_SECONDS: ${WINDOW_SECONDS:-12}

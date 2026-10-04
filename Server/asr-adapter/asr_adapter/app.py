@@ -4,13 +4,14 @@ import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Callable
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from . import __version__
 from .config import Settings, settings_from_env
+from .nemo_realtime import NemoHealthClient
 from .sessions import SessionError, SessionStore
 from .wav import WavError, parse_wav
 from .whisper_client import Transcriber, TranscriberError, WhisperServerClient
@@ -35,10 +36,18 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
     return JSONResponse(status_code=status, content={"error": code, "message": message})
 
 
-def create_app(settings: Settings | None = None, transcriber: Transcriber | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    transcriber: Transcriber | None = None,
+    nemo_factory: Callable[[], Any] | None = None,
+) -> FastAPI:
     settings = settings or settings_from_env()
-    transcriber = transcriber or WhisperServerClient(settings.whisper_url, settings.whisper_timeout_seconds)
-    store = SessionStore(settings, transcriber)
+    if transcriber is None:
+        if settings.asr_backend == "nemo":
+            transcriber = NemoHealthClient(settings.nemo_url, settings.nemo_api_key)
+        else:
+            transcriber = WhisperServerClient(settings.whisper_url, settings.whisper_timeout_seconds)
+    store = SessionStore(settings, transcriber, nemo_factory=nemo_factory)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -67,7 +76,7 @@ def create_app(settings: Settings | None = None, transcriber: Transcriber | None
 
     @app.exception_handler(TranscriberError)
     async def _transcriber_error(_: Request, error: TranscriberError) -> JSONResponse:
-        log.warning("whisper-server: %s", error)
+        log.warning("ASR-Backend (%s): %s", settings.asr_backend, error)
         return _error(503, "asr_unavailable", "Spracherkennung ist gerade nicht verfügbar.")
 
     @app.exception_handler(Exception)
@@ -87,6 +96,7 @@ def create_app(settings: Settings | None = None, transcriber: Transcriber | None
         body: dict[str, Any] = {
             "status": "ok" if healthy else "degraded",
             "version": __version__,
+            "backend": settings.asr_backend,
             "model": settings.model_name,
             "modelLoaded": healthy,
             "activeSessions": store.active_count,
