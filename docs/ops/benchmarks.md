@@ -44,6 +44,8 @@ Nemotron streamt ohne Qualitätsverlust (G137 offline 15,9 % = live 15,9 %). Zah
 
 `POST /v1/audio/transcriptions` mit `diarization=true` liefert je Wort ein `speaker`-Feld; daraus entsteht eine Mitschrift mit 7 Sprecherwechseln, die den Verlauf des Gesprächs plausibel wiedergibt (Moderation, Zitat, zwei Gäste). Eine Messung der Fehlerrate gegen manuell markierte Wechsel steht aus.
 
+Live über den Adapter (PR #14, `NEMO_SPEAKER_DIARIZATION=true`, Realtime-Kanal mit `speaker_diarization`): 32 finale Segmente, alle mit Label, Sprecher 1 bis 4; Äußerungen mit Wechsel werden in Sprecherläufe geteilt; WER unverändert 15,9 %.
+
 ## Mac M3 (8 GB), `small`, Fensterverfahren, 2026-10-03
 
 | Aufnahme | Standard | `-sns -bs 5` |
