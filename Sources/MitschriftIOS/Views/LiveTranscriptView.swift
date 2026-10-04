@@ -32,14 +32,35 @@ struct LiveTranscriptView: View {
     }
 
     private var transcriptText: Text {
-        let finalText = session.transcript.finalText
-        let partialText = session.transcript.partialText
-        let finals = Text(finalText).foregroundColor(.primary)
+        let transcript = session.transcript
+        let partialText = transcript.partialText
+        let finals = Self.finalText(for: transcript)
         guard !partialText.isEmpty else { return finals }
-        let partial = Text((finalText.isEmpty ? "" : " ") + partialText)
+        let separator = transcript.finalSegments.isEmpty ? "" : (transcript.hasSpeakers ? "\n" : " ")
+        let partial = Text(separator + partialText)
             .italic()
             .foregroundColor(.secondary)
         return finals + partial
+    }
+
+    /// Finale Abschnitte; mit Sprecherlabels als Absätze mit fettem „Sprecher N:“-Präfix.
+    static func finalText(for transcript: Transcript) -> Text {
+        guard transcript.hasSpeakers else {
+            return Text(transcript.finalText).foregroundColor(.primary)
+        }
+        var result = Text("")
+        for (index, paragraph) in Transcript.speakerParagraphs(transcript.finalSegments).enumerated() {
+            if index > 0 { result = result + Text("\n") }
+            if let range = paragraph.range(of: "Sprecher "), range.lowerBound == paragraph.startIndex,
+               let colon = paragraph.range(of: ": ") {
+                let prefix = String(paragraph[paragraph.startIndex..<colon.lowerBound])
+                let body = String(paragraph[colon.upperBound...])
+                result = result + Text(prefix + ":").bold() + Text(" " + body)
+            } else {
+                result = result + Text(paragraph)
+            }
+        }
+        return result.foregroundColor(.primary)
     }
 
     private var statusLine: some View {

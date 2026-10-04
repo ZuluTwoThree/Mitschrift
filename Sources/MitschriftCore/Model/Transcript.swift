@@ -32,6 +32,45 @@ public struct Transcript: Equatable, Sendable {
         finalSegments.isEmpty && partialSegments.isEmpty
     }
 
+    /// Gibt es mindestens einen finalen Abschnitt mit Sprecherlabel?
+    public var hasSpeakers: Bool {
+        finalSegments.contains { $0.speaker != nil }
+    }
+
+    /// Finaler Text als Absätze nach Sprechern: Jeder Sprecherwechsel beginnt eine neue Zeile mit
+    /// „Sprecher N: “. Abschnitte ohne Label hängen an der laufenden Zeile; folgt ein Abschnitt ohne
+    /// Label auf einen Sprecher, bekommt er einen eigenen Absatz ohne Präfix. Ohne Labels gleich `finalText`.
+    public var finalTextWithSpeakers: String {
+        guard hasSpeakers else { return finalText }
+        return Self.speakerParagraphs(finalSegments).joined(separator: "\n")
+    }
+
+    /// Text für Anzeige und Export: Sprecherabsätze der Finals, dahinter der vorläufige Text.
+    public var exportText: String {
+        [finalTextWithSpeakers, partialText].filter { !$0.isEmpty }.joined(separator: hasSpeakers ? "\n" : " ")
+    }
+
+    /// Absätze aus Sprecherwechseln: (Label oder nil, Text).
+    public static func speakerParagraphs(_ segments: [Segment]) -> [String] {
+        var paragraphs: [(speaker: String?, words: [String])] = []
+        for segment in segments {
+            let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            if let last = paragraphs.last, last.speaker == segment.speaker || (segment.speaker == nil && last.speaker == nil) {
+                paragraphs[paragraphs.count - 1].words.append(text)
+            } else if segment.speaker == nil, paragraphs.isEmpty {
+                paragraphs.append((nil, [text]))
+            } else {
+                paragraphs.append((segment.speaker, [text]))
+            }
+        }
+        return paragraphs.map { paragraph in
+            let body = paragraph.words.joined(separator: " ")
+            guard let speaker = paragraph.speaker else { return body }
+            return "Sprecher \(speaker): \(body)"
+        }
+    }
+
     /// Übernimmt eine Segmentantwort: neue Finals anhängen, Partials ersetzen.
     public mutating func apply(_ response: SegmentResponse) {
         append(finals: response.finalSegments)

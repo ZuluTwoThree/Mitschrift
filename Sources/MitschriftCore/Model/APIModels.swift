@@ -78,6 +78,9 @@ public struct HealthResponse: Codable, Equatable, Sendable {
     public var activeSessions: Int?
     public var maxSessions: Int?
     public var language: String?
+    public var backend: String?
+    /// Sprechertrennung auf dem Server aktiv (Segmente tragen dann `speaker`).
+    public var diarization: Bool?
 
     public var isHealthy: Bool { status == "ok" }
 }
