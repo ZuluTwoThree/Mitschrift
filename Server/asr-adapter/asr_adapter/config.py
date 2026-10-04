@@ -44,6 +44,10 @@ class Settings:
     finalize_force_seconds: float = 8.0
     # Nach einem finalen Segment wird der Puffer an der leisesten Stelle innerhalb dieses Zeitraums geschnitten.
     cut_search_seconds: float = 0.4
+    # So viele Zeichen des zuletzt finalisierten Texts bekommt Whisper als Prompt für das nächste Fenster.
+    # Standard 0 (aus): Im Vergleich auf einer 56-s-Aufnahme verschlechterte der Prompt die
+    # Wortfehlerrate gegenüber der Offline-Transkription von 13,3 % auf 19,5 % und erzeugte leere Fenster.
+    prompt_max_chars: int = 0
 
     # Limits
     max_sessions: int = 4
@@ -99,6 +103,7 @@ def settings_from_env() -> Settings:
         finalize_margin_seconds=_env_float("FINALIZE_MARGIN_SECONDS", 3.0),
         finalize_min_gap_seconds=_env_float("FINALIZE_MIN_GAP_SECONDS", 0.2),
         finalize_force_seconds=_env_float("FINALIZE_FORCE_SECONDS", 8.0),
+        prompt_max_chars=_env_int("PROMPT_MAX_CHARS", 0),
         max_sessions=_env_int("MAX_SESSIONS", 4),
         session_idle_timeout_seconds=_env_float("SESSION_IDLE_TIMEOUT_SECONDS", 60.0),
         whisper_timeout_seconds=_env_float("WHISPER_TIMEOUT_SECONDS", 15.0),

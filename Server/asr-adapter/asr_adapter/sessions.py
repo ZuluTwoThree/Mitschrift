@@ -43,6 +43,8 @@ class Session:
     timeline_end: float = 0.0
     # Dedup: gespeicherte Antwort je sequence
     responses: dict[int, dict[str, Any]] = field(default_factory=dict)
+    # Zuletzt finalisierter Text (gekürzt), als Prompt für das nächste Fenster
+    recent_final_text: str = ""
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     inflight: int = 0
     # Nur im NeMo-Backend: offene Realtime-Sitzung, gesendete Audiodauer und Zeitachsenversatz
@@ -76,10 +78,18 @@ class Session:
         Pause oder einem Satzende endet; andernfalls erst, wenn es `finalize_force_seconds` zurückliegt.
         Der Puffer wird dann an der leisesten Stelle kurz hinter dem Segmentende geschnitten, damit kein
         angeschnittenes Wort in das nächste Fenster wandert.
+
+        Überlaufschutz: Audio, das beim nächsten Segment vorn aus dem Fenster fallen würde, darf nicht
+        nur vorläufig gewesen sein. Deshalb wird jedes Segment, dessen Anfang in diesem Bereich liegt,
+        finalisiert, notfalls auch ohne Pause und innerhalb des Sicherheitsabstands.
         """
         settings = self.settings
         cutoff = self.buffer_end if finalize_all else self.buffer_end - settings.finalize_margin_seconds
         force_before = self.buffer_end - settings.finalize_force_seconds
+        # Alles, was vor dieser Marke beginnt, würde beim nächsten Segment aus dem Fenster fallen.
+        # Pro Anfrage kommen höchstens max_segment_seconds minus der verworfenen Überlappung neu dazu.
+        max_appended = settings.max_segment_seconds - settings.overlap_seconds
+        overflow_before = self.buffer_end - (settings.window_seconds - max_appended)
         ordered = sorted(raw, key=lambda s: s.start)
         final: list[dict[str, Any]] = []
         partial: list[dict[str, Any]] = []
@@ -90,7 +100,11 @@ class Session:
             abs_end = self.buffer_start + segment.end
             if finalize_all:
                 accept = True
-            elif partial or abs_end > cutoff:
+            elif partial:
+                accept = False
+            elif abs_start <= overflow_before:
+                accept = True  # Überlaufschutz: sonst ginge dieser Text verloren
+            elif abs_end > cutoff:
                 accept = False
             else:
                 next_start = ordered[index + 1].start if index + 1 < len(ordered) else None
@@ -101,6 +115,7 @@ class Session:
             if accept:
                 final.append(_segment_json(abs_start, abs_end, segment.text))
                 last_final_end_rel = segment.end
+                self._remember_final_text(segment.text)
             else:
                 if not partial:
                     next_partial_start_rel = segment.start
@@ -114,6 +129,14 @@ class Session:
             self.buffer = self.buffer[cut:]
             self.buffer_start += cut / settings.sample_rate
         return final, partial
+
+    def _remember_final_text(self, text: str) -> None:
+        """Merkt sich die letzten `prompt_max_chars` Zeichen finalen Texts; 0 schaltet den Prompt ab."""
+        limit = self.settings.prompt_max_chars
+        if limit <= 0:
+            self.recent_final_text = ""
+            return
+        self.recent_final_text = (self.recent_final_text + " " + text.strip())[-limit:].strip()
 
     def _quiet_cut(self, end_rel: float, limit_rel: float | None) -> float:
         """Leiseste 50-ms-Stelle zwischen `end_rel` und `end_rel + cut_search_seconds` (vor `limit_rel`)."""
@@ -208,7 +231,7 @@ class SessionStore:
         window_start, window_end = session.buffer_start, session.buffer_end
         started = time.perf_counter()
         try:
-            raw = await self._transcriber.transcribe(session.buffer, session.language)
+            raw = await self._transcriber.transcribe(session.buffer, session.language, prompt=session.recent_final_text or None)
         except Exception:
             session.buffer, session.buffer_start, session.timeline_end = snapshot
             raise
@@ -254,7 +277,7 @@ class SessionStore:
         if self._engine is not None:
             final = await self._engine.finish(session)
         elif len(session.buffer) > min_samples:
-            raw = await self._transcriber.transcribe(session.buffer, session.language)
+            raw = await self._transcriber.transcribe(session.buffer, session.language, prompt=session.recent_final_text or None)
             final, _ = session.split(raw, finalize_all=True)
         else:
             session.split([], finalize_all=True)

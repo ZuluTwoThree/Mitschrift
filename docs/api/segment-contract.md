@@ -126,7 +126,8 @@ Der Server hält je Session einen Rollpuffer von höchstens 12 s Audio. Nach jed
 
 - zum nächsten erkannten Segment besteht eine Lücke von mindestens 0,2 s (Sprechpause) oder es gibt kein weiteres Segment,
 - der Text endet mit `.`, `!` oder `?` (Satzende),
-- das Segmentende liegt mindestens 8 s vor dem Pufferende (Zwangsfinalisierung, damit bei durchgehender Rede nichts aus dem Puffer fällt).
+- das Segmentende liegt mindestens 8 s vor dem Pufferende (Zwangsfinalisierung bei durchgehender Rede),
+- **Überlaufschutz:** der Segmentanfang liegt so weit zurück, dass er beim nächsten Segment aus dem Puffer fallen würde (Puffer 12 s abzüglich des höchstens neu hinzukommenden Audios von 5 s minus 0,3 s Überlappung, also älter als 7,3 s vor dem Pufferende). Dann wird das Segment auch innerhalb des Sicherheitsabstands finalisiert; Text, der nur vorläufig war, darf nie stillschweigend verschwinden.
 
 Hintergrund: Whisper setzt Segmentgrenzen gelegentlich mitten in ein Wort, wenn das Fenster dort endete. Würde der Server genau dort finalisieren und den Puffer abschneiden, ginge der Wortrest verloren.
 
