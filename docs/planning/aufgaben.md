@@ -113,4 +113,20 @@ Diese Punkte werden erst ab WP5 relevant. Bauen und installieren geht automatisi
 
 | 2026-10-04 | iPhone 11 Pro Max | kiworkstation (RTX 3090), Docker-Stack, Nemotron 3.5 Streaming + Diarization | `nemotron-3.5-asr-streaming-0.6b` q8 | WLAN, Tailnet, `tailscale serve` | 137 s, Deutsch, 4 Sprechende | Vom iPhone gegen den Server: Transkript angekommen; Replay-Messung WER 15,9 % gegenüber whisper turbo offline, keine Wortverluste, 4 Sprechende erkannt (`docs/ops/benchmarks.md`) |
 
-Offen: handkorrigierte Referenz für die 137-s-Aufnahme, Langzeittest (läuft), Modellentscheidung nach weiteren Aufnahmen. Die App-Version mit Sprecheranzeige, Serverprofilen und eigenem Icon ist seit 2026-10-04 auf dem iPhone installiert.
+Offen: handkorrigierte Referenz für die 137-s-Aufnahme, Modellentscheidung nach weiteren Aufnahmen. Der Langzeittest (61 min) ist bestanden. Die App-Version mit Sprecheranzeige, Serverprofilen und eigenem Icon ist seit 2026-10-04 auf dem iPhone installiert.
+
+## Stand 2026-10-04, zweite Runde: Aufnahmenliste, Sprechernamen, Protokoll-Assistent
+
+Auf dem Server ist erledigt: `LLM_URL` und `LLM_MODEL` in der `.env` auf kiworkstation zeigen auf den laufenden Qwen3-8B-`llama-server` (über die Tailnet-HTTPS-Adresse des Hosts, weil der Container `127.0.0.1` des Hosts nicht erreicht), Adapter neu gebaut, `/v1/health` meldet `notes: true`. Der Qwen3-8B-Server muss dafür laufen; ist er gestoppt, zeigt die App beim Protokoll „Der Protokoll-Assistent ist auf dem Server nicht eingerichtet oder gerade nicht erreichbar.“
+
+Zum Prüfen auf dem iPhone, nach dem Update der App:
+
+- [ ] Aufnahme machen und stoppen. Erwartung: nach wenigen Sekunden steht in der Liste (Knopf mit Listensymbol oben rechts) eine `M4A`-Datei statt `WAV`, etwa ein Fünftel so groß.
+- [ ] „Sprecher benennen“ unter der Mitschrift: Namen vergeben, sichern. Erwartung: Spalte zeigt Initialen, Export und Protokoll verwenden die Namen.
+- [ ] „Protokoll erstellen“: dauert bei 2 min Gespräch etwa 3–5 s, bei einer Stunde bis zu einer Minute. Erwartung: Protokoll mit Zusammenfassung, Themen, Entscheidungen, Aufgaben (mit Belegzitat) und offenen Punkten; Teilen als `.md`.
+- [ ] In der Liste eine alte Aufnahme öffnen, „Nachträglich transkribieren“, danach Protokoll. Löschen über Papierkorb oder „Bearbeiten“ mit Mehrfachauswahl.
+- [ ] Live-Ansicht während einer Aufnahme nach oben scrollen. Erwartung: kein Zwangsscroll mehr, stattdessen Knopf „Zum Ende“.
+- [ ] Mit ausgeschaltetem Tailscale eine Aufnahme starten. Erwartung: nach wenigen Sekunden steht unter dem Titel „Server nicht erreichbar, ist Tailscale auf dem iPhone an? …“; die Aufnahme läuft lokal weiter.
+- [ ] App während einer Aufnahme hart beenden (App-Umschalter, nach oben wischen), neu starten. Erwartung: die Aufnahme steht in der Liste mit Marke „unterbrochen“ und ist abspielbar und nachträglich transkribierbar.
+- [ ] Die Gerätetests aus dem Abschnitt oben (Flugmodus, Anruf, Bildschirmsperre, Mobilfunk) stehen weiterhin aus.
+- [ ] Die kostenlose Signatur läuft um den 11. Oktober 2026 ab; danach die App einmal neu installieren (`zsh Scripts/build-ios.sh device`, iPhone im selben WLAN reicht).

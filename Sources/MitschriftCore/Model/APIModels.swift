@@ -81,6 +81,8 @@ public struct HealthResponse: Codable, Equatable, Sendable {
     public var backend: String?
     /// Sprechertrennung auf dem Server aktiv (Segmente tragen dann `speaker`).
     public var diarization: Bool?
+    /// Der Protokoll-Assistent (`POST /v1/notes`) ist auf dem Server eingerichtet.
+    public var notes: Bool?
 
     public var isHealthy: Bool { status == "ok" }
 }
@@ -89,4 +91,47 @@ public struct HealthResponse: Codable, Equatable, Sendable {
 public struct APIErrorBody: Codable, Equatable, Sendable {
     public var error: String
     public var message: String?
+}
+
+/// Anfrage an `POST /v1/notes`: die Mitschrift als Text, aus der der Assistent ein Protokoll erstellt.
+public struct NotesRequest: Codable, Equatable, Sendable {
+    public var transcript: String
+    public var language: String
+    public var title: String?
+    public var recordedAt: String?
+
+    public init(transcript: String, language: String, title: String? = nil, recordedAt: Date? = nil, timeZone: TimeZone = .current) {
+        self.transcript = transcript
+        self.language = language
+        self.title = title
+        // Mit Zeitzonenversatz, damit der Server die Ortszeit des Geräts ins Protokoll schreibt.
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = timeZone
+        self.recordedAt = recordedAt.map { formatter.string(from: $0) }
+    }
+}
+
+/// Antwort auf `POST /v1/notes`: das Protokoll als Markdown.
+public struct NotesResponse: Codable, Equatable, Sendable {
+    public var notes: String
+    public var model: String?
+    public var diagnostics: NotesDiagnostics?
+
+    public init(notes: String, model: String? = nil, diagnostics: NotesDiagnostics? = nil) {
+        self.notes = notes
+        self.model = model
+        self.diagnostics = diagnostics
+    }
+}
+
+public struct NotesDiagnostics: Codable, Equatable, Sendable {
+    public var latencyMs: Int?
+    public var promptTokens: Int?
+    public var completionTokens: Int?
+
+    public init(latencyMs: Int? = nil, promptTokens: Int? = nil, completionTokens: Int? = nil) {
+        self.latencyMs = latencyMs
+        self.promptTokens = promptTokens
+        self.completionTokens = completionTokens
+    }
 }

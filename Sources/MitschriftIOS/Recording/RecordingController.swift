@@ -4,6 +4,7 @@ import MitschriftCore
 
 /// Zustand der iOS-Aufnahme: Berechtigung, Start/Stopp, Dauer, lokale WAV-Datei, Segmentbildung
 /// und, falls ein Server eingerichtet ist, die Live-Übertragung über `LiveTranscriptionSession`.
+/// Nach dem Stopp wird die WAV-Datei im Hintergrund in AAC umgewandelt (`AudioArchiver`).
 @MainActor
 final class RecordingController: ObservableObject {
     enum State: Equatable {
@@ -19,11 +20,14 @@ final class RecordingController: ObservableObject {
 
     struct Result: Equatable {
         var audioURL: URL
-        var transcriptURL: URL?
+        var createdAt: Date
+        var language: String
         var transcript: Transcript
         var liveIncomplete: Bool
         /// Segmente, die lokal nicht eingereiht oder vom Server abgelehnt wurden.
         var missingSegments: Int = 0
+        /// Die Umwandlung der WAV-Datei in AAC läuft noch.
+        var compressing = false
     }
 
     @Published private(set) var state: State = .idle
@@ -43,6 +47,7 @@ final class RecordingController: ObservableObject {
     private var timer: Timer?
     private var startedAt: Date?
     private var audioURL: URL?
+    private var language = "de"
 
     init() {
         let sink = self.sink
@@ -96,6 +101,7 @@ final class RecordingController: ObservableObject {
             let sink = self.sink
             sampleQueue.sync { sink.begin(writer: newWriter) }
             audioURL = url
+            self.language = language
             result = nil
             segmentCount = 0
             lostSegments = 0
@@ -147,23 +153,31 @@ final class RecordingController: ObservableObject {
             state = .failed("Die Aufnahmedatei wurde nicht gefunden.")
             return
         }
-        var transcriptURL: URL?
+        let missing = lostSegments + (liveSession?.droppedCount ?? 0)
+        let createdAt = startedAt ?? Date()
         if !transcript.isEmpty {
-            let url = audioURL.deletingLastPathComponent()
-                .appendingPathComponent(RecordingNaming.transcriptFileName(forAudioNamed: audioURL.lastPathComponent))
-            do {
-                try transcript.exportText.write(to: url, atomically: true, encoding: .utf8)
-                transcriptURL = url
-            } catch {
+            let document = TranscriptDocument(createdAt: createdAt, language: language, transcript: transcript, incomplete: incomplete, missingSegments: missing)
+            let library = RecordingLibrary(directory: audioURL.deletingLastPathComponent())
+            if (try? library.save(document, forAudio: audioURL)) == nil {
                 incomplete = true
             }
         }
-        let missing = lostSegments + (liveSession?.droppedCount ?? 0)
-        result = Result(audioURL: audioURL, transcriptURL: transcriptURL, transcript: transcript, liveIncomplete: incomplete, missingSegments: missing)
+        result = Result(audioURL: audioURL, createdAt: createdAt, language: language, transcript: transcript,
+                        liveIncomplete: incomplete, missingSegments: missing, compressing: true)
         state = .finished
+        Task { await compress(wavURL: audioURL) }
     }
 
-    /// Ersetzt das Ergebnis, etwa nach nachträglicher Übertragung.
+    /// Wandelt die WAV-Datei nach dem Stopp in AAC um. Scheitert das, bleibt die WAV-Datei bestehen.
+    private func compress(wavURL: URL) async {
+        let compressed = try? await AudioArchiver.compress(wavURL: wavURL)
+        guard var current = result, current.audioURL == wavURL else { return }
+        current.compressing = false
+        if let compressed { current.audioURL = compressed }
+        result = current
+    }
+
+    /// Ersetzt das Ergebnis, etwa für Gestaltungs-Vorschauen.
     func update(result: Result) {
         self.result = result
     }

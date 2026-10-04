@@ -2,7 +2,7 @@ import Foundation
 import Combine
 import MitschriftCore
 
-/// Überträgt eine gespeicherte WAV-Datei nachträglich segmentweise an den Server.
+/// Überträgt eine gespeicherte Audiodatei (WAV oder AAC) nachträglich segmentweise an den Server.
 ///
 /// Für Aufnahmen, deren Live-Übertragung pausiert oder fehlgeschlagen ist. Nutzt dieselbe Session-Logik
 /// wie die Live-Aufnahme, nur mit Audio aus der Datei statt vom Mikrofon.
@@ -15,8 +15,15 @@ final class FileTranscriptionTask: ObservableObject {
     func run(audioURL: URL, endpoint: ServerEndpoint, language: String) async -> Transcript? {
         error = nil
         progress = 0
-        guard let data = try? Data(contentsOf: audioURL), let samples = WAVEncoder.samples(from: data) else {
-            error = "Die Aufnahmedatei konnte nicht gelesen werden."
+        let samples: [Int16]
+        do {
+            samples = try await Task.detached(priority: .userInitiated) { try AudioFileReader.samples(from: audioURL) }.value
+        } catch {
+            self.error = error.localizedDescription
+            return nil
+        }
+        guard !samples.isEmpty else {
+            error = "Die Aufnahmedatei enthält kein Audio."
             return nil
         }
         let session = LiveTranscriptionSession(transport: URLSessionLiveTransport(endpoint: endpoint), language: language)

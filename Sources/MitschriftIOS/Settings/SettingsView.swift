@@ -105,8 +105,8 @@ struct SettingsView: View {
         case .testing:
             Label("Verbindung wird geprüft …", systemImage: "antenna.radiowaves.left.and.right")
                 .foregroundStyle(.secondary)
-        case .ok(let model, let version, let diarization):
-            Label("Verbunden mit Modell \(model), Version \(version)" + (diarization ? ", mit Sprechertrennung" : ""), systemImage: "checkmark.circle.fill")
+        case .ok(let model, let version, let diarization, let notes):
+            Label("Verbunden mit Modell \(model), Version \(version)" + (diarization ? ", mit Sprechertrennung" : "") + (notes ? ", mit Protokoll-Assistent" : ""), systemImage: "checkmark.circle.fill")
                 .foregroundStyle(Theme.mint)
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")

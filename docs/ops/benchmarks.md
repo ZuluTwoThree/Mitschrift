@@ -72,3 +72,22 @@ Keine Qualitätsdrift: Die Wortfehlerrate je Wiederholung (an der wiederkehrende
 ## Vorläufiges Fazit
 
 Nemotron 3.5 über NeMo-Speech.cpp ist für die Live-Mitschrift das bessere Backend: keine Wortverluste, echte Satzgrenzen, Satzzeichen, Sprechertrennung aus derselben Laufzeit, 1,4 GB VRAM. Whisper bleibt als Fallback und für Offline-Nachbearbeitung (bessere Zahlen- und Namensschreibung). Offen: handkorrigierte Referenz für G137, Vergleich mit whisper `large-v3` f16 offline, Langzeittest.
+
+## Protokoll-Assistent (`/v1/notes`), Qwen3-8B über llama-server
+
+Qwen3-8B (UD-Q4_K_XL, Kontext 32k, `--reasoning off`) auf derselben RTX 3090 neben NeMo-Speech. Antwortzeiten ohne Streaming:
+
+| Eingabe | Prompt-Token | Antwort-Token | Dauer |
+| --- | --- | --- | --- |
+| G137 als Sprecherabsätze (351 Wörter) | 1 179 | 294 | 2,9 s |
+| Synthetischer Jour fixe (9 Beiträge) | 841 | 342 | 3,4 s |
+
+Qualität: Ohne Belegpflicht erfand das Modell in der Talkrunde drei „Aufgaben“ aus Meinungsäußerungen. Mit der
+Regel, dass jede Aufgabe und Entscheidung ein wörtliches Zitat aus der Mitschrift braucht und Diskussionen keine
+Aufgaben sind, liefert es für G137 „Keine Aufgaben festgehalten.“ und für den Jour fixe die beiden tatsächlichen
+Zusagen samt Frist sowie die Terminentscheidung mit Zitat. Eine Stunde Gespräch (etwa 9 000 Wörter, 18 000 Token)
+passt in den Kontext; längere Mitschriften lehnt der Adapter mit 413 ab (`LLM_MAX_INPUT_CHARS`).
+
+## Aufnahmeformat AAC statt WAV
+
+Siehe `docs/planning/audioformat.md`: G137 nach AAC 48 kbit/s und zurück ergibt 16,2 % WER statt 15,9 % (32 kbit/s: 16,8 %), bei einem Fünftel der Dateigröße. Zwei Replays desselben Originals sind identisch (0,0 %).

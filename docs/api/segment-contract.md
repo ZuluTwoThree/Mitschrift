@@ -39,11 +39,12 @@ Ohne Token erreichbar, liefert nur Betriebsdaten.
   "activeSessions": 1,
   "maxSessions": 4,
   "language": "de",
-  "diarization": false
+  "diarization": false,
+  "notes": true
 }
 ```
 
-`diarization` sagt, ob der Server Sprecherlabels liefert (siehe `speaker` bei den Segmenten). `status` ist `ok`, `loading` (Modell wird noch geladen, HTTP 503) oder `degraded` (Modell geladen, aber `whisper-server` antwortet nicht, HTTP 503).
+`diarization` sagt, ob der Server Sprecherlabels liefert (siehe `speaker` bei den Segmenten). `notes` sagt, ob der Protokoll-Assistent (`POST /v1/notes`) konfiguriert ist; das LLM selbst wird dafür nicht angefragt. `status` ist `ok`, `loading` (Modell wird noch geladen, HTTP 503) oder `degraded` (Modell geladen, aber `whisper-server` antwortet nicht, HTTP 503).
 
 ### `POST /v1/live-transcriptions/segments`
 
@@ -120,6 +121,56 @@ Antwort 200:
 
 Idempotenz: Der Server speichert die Abschlussantwort. Ein wiederholter `finish`-Aufruf derselben Session liefert **dieselbe Antwort** erneut (gleiche `final`-Liste, gleiche `lastSequence`), solange die Session noch im Speicher ist (mindestens bis zum Ablauf des Session-Timeouts nach dem Abschluss). So geht bei einem Verbindungsabbruch zwischen Verarbeitung und Antwort kein Text verloren: Die App wiederholt `finish` bei Netzfehlern, 429 und 5xx mit Backoff und übernimmt die finalen Segmente erst aus der erfolgreichen Antwort. Wer `finish` zweimal erfolgreich erhält, darf die `final`-Segmente nicht doppelt anhängen; die App hängt nur an, was sie noch nicht hat (die Antwort ist identisch, also einfach die erste erfolgreiche verwenden).
 
+### `POST /v1/notes`
+
+Erzeugt aus einer fertigen Mitschrift ein Besprechungsprotokoll in Markdown (Zusammenfassung, Themen, Entscheidungen, Aufgaben, offene Punkte). Der Adapter reicht den Text an ein OpenAI-kompatibles LLM weiter; der Aufruf ist synchron und kann je nach Länge mehrere Minuten dauern. Die App sollte dafür einen Timeout deutlich über dem der Segmente ansetzen (Serverseite: 180 s).
+
+Request-Header: `Authorization: Bearer <token>`, `Content-Type: application/json`, optional `X-Mitschrift-Client`.
+
+Request-Body:
+
+```json
+{
+  "transcript": "Anna: Guten Morgen …\nBernd: …",
+  "language": "de",
+  "title": "Jour fixe",
+  "recordedAt": "2026-10-04T10:00:00Z"
+}
+```
+
+| Feld | Pflicht | Bedeutung |
+| --- | --- | --- |
+| `transcript` | ja | Mitschrift als Text, nach Trim nicht leer; üblicherweise eine Zeile je Segment, bei Sprechertrennung mit vorangestelltem Sprecher (`Sprecher 2: …`). Länger als das Serverlimit (Startwert 120 000 Zeichen) → 413 |
+| `language` | nein | `de` (Standard) oder `en`; `auto` und fehlend gelten als `de`, andere Werte → 400 `invalid_language` |
+| `title` | nein | Freier Titel, erscheint in der Kopfzeile des Protokolls |
+| `recordedAt` | nein | Aufnahmezeitpunkt als String (RFC 3339), erscheint in der Kopfzeile des Protokolls; wird nicht weiter geprüft |
+
+Antwort 200:
+
+```json
+{
+  "notes": "# Protokoll\n\n## Zusammenfassung\n…",
+  "model": "Qwen3-8B",
+  "diagnostics": { "latencyMs": 2345, "promptTokens": 1800, "completionTokens": 420 }
+}
+```
+
+- `notes`: das Protokoll in Markdown mit fester Struktur: `# Protokoll` (optional eine Zeile mit Titel und Datum), dann `## Zusammenfassung`, `## Themen`, `## Entscheidungen`, `## Aufgaben` (Checkliste `- [ ] Wer: Was (bis wann)`), `## Offene Punkte`. Fehlende Angaben stehen als „nicht genannt“, leere Abschnitte als „Keine Entscheidungen festgehalten.“, „Keine Aufgaben festgehalten.“ bzw. „Keine.“. Die App zeigt den Text an oder speichert ihn; sie verlässt sich nicht darauf, ihn maschinell zu zerlegen.
+- `model`: das verwendete Modell, aus der Antwort des LLM oder der Serverkonfiguration.
+- `diagnostics`: optional, alle Felder optional, keine Inhalte.
+
+Fehler:
+
+| HTTP | `error` | Bedeutung |
+| --- | --- | --- |
+| 400 | `invalid_request` | Kein JSON, kein Objekt, `transcript` fehlt, leer oder kein String, `title`/`recordedAt`/`language` mit falschem Typ |
+| 400 | `invalid_language` | `language` ist weder `de`, `en` noch `auto` |
+| 401 | `unauthorized` | Token fehlt oder falsch |
+| 413 | `transcript_too_long` | Mitschrift länger als das Serverlimit |
+| 503 | `llm_unavailable` | Protokoll-Assistent nicht konfiguriert, LLM nicht erreichbar, Timeout, HTTP-Fehler oder unbrauchbare Antwort; `message` ist „Der Protokoll-Assistent ist gerade nicht verfügbar.“ |
+
+Der Adapter speichert weder Mitschrift noch Protokoll und protokolliert keine Inhalte; Fehlermeldungen enthalten nie Text aus der Mitschrift. Der Aufruf ist nicht idempotent: Zwei Aufrufe mit derselben Mitschrift können verschiedene Protokolle liefern.
+
 ## Finalisierungsregel
 
 Der Server hält je Session einen Rollpuffer von höchstens 12 s Audio. Nach jedem Segment transkribiert er den gesamten Puffer. Ein erkanntes Segment gilt als final, wenn sein Ende mindestens 3,0 s vor dem Pufferende liegt **und** eine der folgenden Bedingungen erfüllt ist:
@@ -144,8 +195,10 @@ Die Konstanten (Puffer 12 s, Sicherheitsabstand 3 s, Pause 0,2 s, Zwangsfrist 8 
 | 404 | Session unbekannt (nur bei `finish`) | Als beendet behandeln |
 | 409 | Session bereits beendet oder Sequenzlücke | Session beenden, neue Session für weitere Segmente |
 | 413 | Segment größer als 1 MiB | Segment verwerfen, Fehler protokollieren |
+| 413 `transcript_too_long` | Mitschrift für `/v1/notes` zu lang | Hinweis anzeigen, nicht automatisch wiederholen |
 | 429 | Zu viele Sessions oder Anfragen | Mit Backoff erneut senden, Hinweis „Server ausgelastet“ |
 | 503 | Modell lädt oder `whisper-server` nicht erreichbar | Mit Backoff erneut senden, Hinweis „Server startet“ |
+| 503 `llm_unavailable` | Protokoll-Assistent (`/v1/notes`) nicht konfiguriert oder LLM nicht erreichbar | Hinweis anzeigen, nicht automatisch wiederholen |
 | andere 5xx | Serverfehler, Proxy | Mit Backoff erneut senden |
 | andere 4xx | Fehlkonfiguration (z. B. 403, 405, 422 durch Proxy oder falsche URL) | Session beenden, nicht wiederholen, Einstellungen prüfen lassen |
 

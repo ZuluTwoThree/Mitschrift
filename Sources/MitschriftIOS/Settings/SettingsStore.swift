@@ -9,7 +9,7 @@ final class SettingsStore: ObservableObject {
     enum ConnectionState: Equatable {
         case unknown
         case testing
-        case ok(model: String, version: String, diarization: Bool)
+        case ok(model: String, version: String, diarization: Bool, notes: Bool)
         case failed(String)
     }
 
@@ -174,7 +174,7 @@ final class SettingsStore: ObservableObject {
         do {
             let health = try await transport.health()
             if health.isHealthy {
-                connection = .ok(model: health.model ?? "unbekannt", version: health.version ?? "?", diarization: health.diarization ?? false)
+                connection = .ok(model: health.model ?? "unbekannt", version: health.version ?? "?", diarization: health.diarization ?? false, notes: health.notes ?? false)
             } else {
                 connection = .failed("Server meldet Status „\(health.status)“. Modell lädt noch oder whisper-server antwortet nicht.")
             }
