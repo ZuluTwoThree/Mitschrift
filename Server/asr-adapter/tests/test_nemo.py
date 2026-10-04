@@ -259,3 +259,32 @@ async def test_health_reports_diarization_flag(nemo: FakeNemoServer) -> None:
         body = (await client.get("/v1/health")).json()
     assert body["diarization"] is False
 
+
+async def test_single_speaker_final_keeps_formatted_transcript() -> None:
+    """Hat ein completed-Ereignis nur einen Sprecher, bleibt der formatierte `transcript` erhalten."""
+    from asr_adapter.nemo_realtime import NemoRealtimeSession
+
+    session = NemoRealtimeSession.__new__(NemoRealtimeSession)
+    session._partial = ""
+    session._pending_finals = []
+    session._last_final_end = 0.0
+    session.audio_processed = 0.0
+    session._completed({
+        "transcript": "Guten Tag, wir beginnen.",
+        "words": [
+            {"word": "Guten", "start": 0.5, "end": 0.9, "speaker": 2},
+            {"word": "Tag", "start": 1.0, "end": 1.3, "speaker": 2},
+            {"word": "wir", "start": 1.5, "end": 1.7, "speaker": 2},
+            {"word": "beginnen", "start": 1.8, "end": 2.4, "speaker": 2},
+        ],
+    })
+    assert [(f.text, f.speaker) for f in session._pending_finals] == [("Guten Tag, wir beginnen.", "2")]
+    session._pending_finals.clear()
+    session._completed({
+        "transcript": "Ja. Nein.",
+        "words": [
+            {"word": "Ja.", "start": 3.0, "end": 3.2, "speaker": 1},
+            {"word": "Nein.", "start": 3.5, "end": 3.8, "speaker": 3},
+        ],
+    })
+    assert [(f.text, f.speaker) for f in session._pending_finals] == [("Ja.", "1"), ("Nein.", "3")]

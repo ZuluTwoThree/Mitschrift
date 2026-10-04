@@ -275,10 +275,16 @@ class NemoRealtimeSession:
         self._partial = ""
         if words and any(w.get("speaker") is not None for w in words):
             # Sprechertrennung: je zusammenhängendem Sprecherlauf ein eigenes finales Segment.
-            for run in _speaker_runs(words):
+            runs = _speaker_runs(words)
+            transcript = str(event.get("transcript") or event.get("text") or "").strip()
+            for run in runs:
                 start = float(run[0].get("start", self._last_final_end))
                 end = float(run[-1].get("end", start))
-                text = " ".join(str(w.get("word", "")).strip() for w in run).strip()
+                if len(runs) == 1 and transcript:
+                    # Nur ein Sprecher: den formatierten Text des Servers behalten (Satzzeichen, Normalisierung).
+                    text = transcript
+                else:
+                    text = " ".join(str(w.get("word", "")).strip() for w in run).strip()
                 if not text:
                     continue
                 speaker = run[0].get("speaker")
