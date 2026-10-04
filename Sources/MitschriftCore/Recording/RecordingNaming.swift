@@ -7,10 +7,36 @@ public enum RecordingNaming {
         "Gespräch-\(timestamp(date)).\(fileExtension)"
     }
 
-    /// `Gespräch-…-Mitschrift.txt` zu einer Audiodatei.
+    /// `Gespräch-…-Mitschrift.txt` zu einer Audiodatei: der lesbare Export.
     public static func transcriptFileName(forAudioNamed audioName: String) -> String {
-        let base = (audioName as NSString).deletingPathExtension
-        return "\(base)-Mitschrift.txt"
+        "\(baseName(audioName))-Mitschrift.txt"
+    }
+
+    /// `Gespräch-…-Mitschrift.json`: die gespeicherte Mitschrift mit Abschnitten und Sprechernamen.
+    public static func transcriptDocumentFileName(forAudioNamed audioName: String) -> String {
+        "\(baseName(audioName))-Mitschrift.json"
+    }
+
+    /// `Gespräch-…-Protokoll.md`: das vom Assistenten erstellte Protokoll.
+    public static func notesFileName(forAudioNamed audioName: String) -> String {
+        "\(baseName(audioName))-Protokoll.md"
+    }
+
+    /// Der gemeinsame Namensstamm aller Dateien einer Aufnahme (`Gespräch-2026-10-02_18-30-00`).
+    public static func baseName(_ fileName: String) -> String {
+        (fileName as NSString).deletingPathExtension
+    }
+
+    /// Der Zeitpunkt aus einem Dateinamen der Form `Gespräch-yyyy-MM-dd_HH-mm-ss…`, falls vorhanden.
+    public static func date(fromFileName fileName: String) -> Date? {
+        let base = baseName(fileName)
+        guard let dash = base.firstIndex(of: "-") else { return nil }
+        let stamp = String(base[base.index(after: dash)...].prefix(19))
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "de_DE")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        return formatter.date(from: stamp)
     }
 
     /// `mm:ss`, ab einer Stunde `h:mm:ss`.

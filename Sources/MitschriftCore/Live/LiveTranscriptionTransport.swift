@@ -7,8 +7,13 @@ public protocol LiveTranscriptionTransport: Sendable {
     func health() async throws -> HealthResponse
 }
 
+/// Der Protokoll-Assistent des Servers (`POST /v1/notes`).
+public protocol NotesTransport: Sendable {
+    func notes(_ request: NotesRequest) async throws -> NotesResponse
+}
+
 /// Umsetzung des Vertrags mit `URLSession`.
-public final class URLSessionLiveTransport: LiveTranscriptionTransport, @unchecked Sendable {
+public final class URLSessionLiveTransport: LiveTranscriptionTransport, NotesTransport, @unchecked Sendable {
     public static let clientHeaderValue = "mitschrift/\(coreVersion)"
     public static let coreVersion = "0.1.0"
 
@@ -48,6 +53,26 @@ public final class URLSessionLiveTransport: LiveTranscriptionTransport, @uncheck
         return try await perform(request)
     }
 
+    /// Erstellt ein Protokoll. Das LLM braucht je nach Länge bis zu einigen Minuten, deshalb ein eigenes Timeout.
+    public func notes(_ body: NotesRequest) async throws -> NotesResponse {
+        var request = URLRequest(url: endpoint.baseURL.appendingPathComponent("v1/notes"))
+        request.httpMethod = "POST"
+        request.httpBody = try JSONEncoder().encode(body)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyCommonHeaders(&request)
+        return try await perform(request, session: longSession)
+    }
+
+    /// Eigene Session für langlaufende Anfragen: Der Leerlauf-Timeout der Standard-Session (15 s) gilt
+    /// hier nicht, weil das LLM ohne Streaming erst am Ende antwortet.
+    private lazy var longSession: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 300
+        configuration.timeoutIntervalForResource = 600
+        configuration.waitsForConnectivity = false
+        return URLSession(configuration: configuration)
+    }()
+
     public func health() async throws -> HealthResponse {
         var request = URLRequest(url: endpoint.baseURL.appendingPathComponent("v1/health"))
         request.httpMethod = "GET"
@@ -72,8 +97,8 @@ public final class URLSessionLiveTransport: LiveTranscriptionTransport, @uncheck
         request.setValue("application/json", forHTTPHeaderField: "Accept")
     }
 
-    private func perform<T: Decodable>(_ request: URLRequest) async throws -> T {
-        let (data, response) = try await data(for: request)
+    private func perform<T: Decodable>(_ request: URLRequest, session: URLSession? = nil) async throws -> T {
+        let (data, response) = try await data(for: request, session: session ?? self.session)
         guard let http = response as? HTTPURLResponse else { throw LiveTranscriptionError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             throw LiveTranscriptionError(status: http.statusCode, body: try? decoder.decode(APIErrorBody.self, from: data))
@@ -85,9 +110,9 @@ public final class URLSessionLiveTransport: LiveTranscriptionTransport, @uncheck
         }
     }
 
-    private func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+    private func data(for request: URLRequest, session: URLSession? = nil) async throws -> (Data, URLResponse) {
         do {
-            return try await session.data(for: request)
+            return try await (session ?? self.session).data(for: request)
         } catch {
             throw LiveTranscriptionError.transport(error.localizedDescription)
         }

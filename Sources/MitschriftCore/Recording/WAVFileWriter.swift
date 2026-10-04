@@ -38,6 +38,16 @@ public final class WAVFileWriter {
         try handle.close()
     }
 
+    /// Wurde die Datei nicht sauber geschlossen? Dann steht im Header die Länge 0, obwohl Audio folgt.
+    public static func needsRepair(at url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        guard let header = try? handle.read(upToCount: WAVEncoder.headerSize), header.count == WAVEncoder.headerSize,
+              let size = try? handle.seekToEnd() else { return false }
+        let declared = header.withUnsafeBytes { UInt32(littleEndian: $0.loadUnaligned(fromByteOffset: 40, as: UInt32.self)) }
+        return declared == 0 && Int(size) > WAVEncoder.headerSize
+    }
+
     /// Setzt die Längenfelder einer unvollständig geschlossenen Datei anhand der Dateigröße.
     public static func repairHeader(at url: URL) throws {
         let handle = try FileHandle(forUpdating: url)
