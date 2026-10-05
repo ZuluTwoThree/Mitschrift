@@ -24,10 +24,18 @@ struct NotesView: View {
 struct NotesScreen: View {
     @ObservedObject var recording: OpenRecording
     @EnvironmentObject private var settings: SettingsStore
+    @State private var editing = false
+    @State private var draft = ""
+    @State private var confirmDiscard = false
+    @State private var confirmRecreate = false
+
+    private var hasChanges: Bool { editing && draft != (recording.notes ?? "") }
 
     var body: some View {
         Group {
-            if recording.activity == .writingNotes {
+            if editing {
+                MarkdownEditor(text: $draft)
+            } else if recording.activity == .writingNotes {
                 VStack(spacing: 12) {
                     ProgressView().tint(Theme.mint)
                     Text("Der Assistent liest die Mitschrift und schreibt das Protokoll.")
@@ -38,7 +46,7 @@ struct NotesScreen: View {
                 }
             } else if let notes = recording.notes {
                 ScrollView {
-                    MarkdownNotes(markdown: notes)
+                    MarkdownNotes(markdown: notes) { line in recording.toggleTask(atLine: line) }
                         .padding(.horizontal, Theme.gutter)
                         .padding(.vertical, 12)
                         .textSelection(.enabled)
@@ -59,31 +67,76 @@ struct NotesScreen: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.night)
-        .navigationTitle("Protokoll")
+        .navigationTitle(editing ? "Bearbeiten" : "Protokoll")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(editing)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 14) {
-                    if let url = recording.item.notesURL, recording.notes != nil {
-                        ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
+            if editing {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Abbrechen") {
+                        if hasChanges { confirmDiscard = true } else { editing = false }
                     }
-                    Menu {
-                        if settings.isConfigured, !recording.transcript.isEmpty {
-                            Button(action: recreate) {
-                                Label("Neu erstellen", systemImage: "arrow.clockwise")
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Sichern") {
+                        recording.saveNotes(draft)
+                        editing = false
+                    }
+                    .fontWeight(.semibold)
+                }
+            } else {
+                ToolbarItem(placement: .primaryAction) {
+                    HStack(spacing: 14) {
+                        if recording.notes != nil {
+                            Button {
+                                draft = recording.notes ?? ""
+                                editing = true
+                            } label: {
+                                Image(systemName: "pencil")
                             }
+                            .accessibilityLabel("Protokoll bearbeiten")
                             .disabled(recording.isBusy)
                         }
-                        if let model = recording.notesModel {
-                            Text("Modell: \(model)")
+                        if let url = recording.item.notesURL, recording.notes != nil {
+                            ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
                         }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Menu {
+                            if settings.isConfigured, !recording.transcript.isEmpty {
+                                Button {
+                                    if recording.notes != nil { confirmRecreate = true } else { recreate() }
+                                } label: {
+                                    Label("Neu erstellen", systemImage: "arrow.clockwise")
+                                }
+                                .disabled(recording.isBusy)
+                            }
+                            if let model = recording.notesModel {
+                                Text("Modell: \(model)")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
                     }
                 }
             }
         }
+        .confirmationDialog("Das vorhandene Protokoll wird durch ein neu erstelltes ersetzt. Eigene Änderungen gehen dabei verloren.", isPresented: $confirmRecreate, titleVisibility: .visible) {
+            Button("Neu erstellen", role: .destructive, action: recreate)
+            Button("Abbrechen", role: .cancel) {}
+        }
+        .confirmationDialog("Änderungen am Protokoll verwerfen?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("Verwerfen", role: .destructive) { editing = false }
+            Button("Weiter bearbeiten", role: .cancel) {}
+        }
+        .interactiveDismissDisabled(hasChanges)
         .tint(Theme.coral)
+        .onAppear {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["MITSCHRIFT_DEV_SHOW_NOTES"] == "edit", let notes = recording.notes {
+                draft = notes
+                editing = true
+            }
+            #endif
+        }
     }
 
     private func recreate() {
@@ -93,13 +146,15 @@ struct NotesScreen: View {
 }
 
 /// Einfache Darstellung der festen Protokollstruktur: `#`, `##`, `- [ ]`, `-`, Absätze.
+/// Aufgaben lassen sich antippen; `onToggleTask` bekommt die Zeilennummer im Markdown.
 struct MarkdownNotes: View {
     var markdown: String
+    var onToggleTask: ((Int) -> Void)? = nil
 
     private enum Block {
         case title(String)
         case heading(String)
-        case task(String, done: Bool)
+        case task(String, done: Bool, line: Int)
         case bullet(String)
         case paragraph(String)
     }
@@ -113,13 +168,14 @@ struct MarkdownNotes: View {
                 paragraph = []
             }
         }
-        for rawLine in markdown.components(separatedBy: .newlines) {
+        for (index, rawLine) in markdown.components(separatedBy: "\n").enumerated() {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             if line.isEmpty { flush(); continue }
-            if line.hasPrefix("## ") { flush(); result.append(.heading(String(line.dropFirst(3)))) }
+            if line.hasPrefix("### ") { flush(); result.append(.heading(String(line.dropFirst(4)))) }
+            else if line.hasPrefix("## ") { flush(); result.append(.heading(String(line.dropFirst(3)))) }
             else if line.hasPrefix("# ") { flush(); result.append(.title(String(line.dropFirst(2)))) }
-            else if line.hasPrefix("- [ ] ") { flush(); result.append(.task(String(line.dropFirst(6)), done: false)) }
-            else if line.lowercased().hasPrefix("- [x] ") { flush(); result.append(.task(String(line.dropFirst(6)), done: true)) }
+            else if line.hasPrefix("- [ ] ") { flush(); result.append(.task(String(line.dropFirst(6)), done: false, line: index)) }
+            else if line.lowercased().hasPrefix("- [x] ") { flush(); result.append(.task(String(line.dropFirst(6)), done: true, line: index)) }
             else if line.hasPrefix("- ") || line.hasPrefix("* ") { flush(); result.append(.bullet(String(line.dropFirst(2)))) }
             else { paragraph.append(line) }
         }
@@ -141,14 +197,23 @@ struct MarkdownNotes: View {
                         .font(Theme.Fonts.speaker)
                         .foregroundStyle(Theme.mint)
                         .padding(.top, 10)
-                case .task(let text, let done):
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(done ? Theme.mint : Theme.coral)
-                        Text(inline(text))
-                            .font(Theme.Fonts.status)
-                            .foregroundStyle(Theme.paper)
+                case .task(let text, let done, let line):
+                    Button {
+                        onToggleTask?(line)
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(done ? Theme.mint : Theme.coral)
+                            Text(inline(text))
+                                .font(Theme.Fonts.status)
+                                .foregroundStyle(done ? Theme.mist : Theme.paper)
+                                .strikethrough(done, color: Theme.mist)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .disabled(onToggleTask == nil)
+                    .accessibilityHint(done ? "Als offen markieren" : "Als erledigt markieren")
                 case .bullet(let text):
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text("•").foregroundStyle(Theme.mist)

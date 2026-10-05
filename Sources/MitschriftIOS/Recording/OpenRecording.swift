@@ -117,6 +117,43 @@ final class OpenRecording: ObservableObject {
         }
     }
 
+    /// Übernimmt ein in der App bearbeitetes Protokoll und schreibt es in die Datei.
+    func saveNotes(_ markdown: String) {
+        let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        notes = trimmed.isEmpty ? nil : markdown
+        // Ab jetzt stammt der Text nicht mehr allein vom Modell.
+        notesModel = nil
+        guard let library else { return }
+        do {
+            if let notes {
+                item.notesURL = try library.saveNotes(notes, forAudio: item.audioURL)
+            } else if let url = item.notesURL {
+                try FileManager.default.removeItem(at: url)
+                item.notesURL = nil
+            }
+        } catch {
+            self.error = "Das Protokoll konnte nicht gespeichert werden: \(error.localizedDescription)"
+        }
+    }
+
+    /// Hakt eine Aufgabe („- [ ]“ ↔ „- [x]“) in der angegebenen Zeile ab oder wieder auf.
+    func toggleTask(atLine index: Int) {
+        guard let notes else { return }
+        var lines = notes.components(separatedBy: "\n")
+        guard lines.indices.contains(index) else { return }
+        let line = lines[index]
+        let leading = line.prefix { $0 == " " || $0 == "\t" }
+        let body = line.dropFirst(leading.count)
+        if body.hasPrefix("- [ ] ") {
+            lines[index] = leading + "- [x] " + body.dropFirst(6)
+        } else if body.lowercased().hasPrefix("- [x] ") {
+            lines[index] = leading + "- [ ] " + body.dropFirst(6)
+        } else {
+            return
+        }
+        saveNotes(lines.joined(separator: "\n"))
+    }
+
     private static func explain(_ error: LiveTranscriptionError) -> String {
         switch error {
         case .unavailable:
