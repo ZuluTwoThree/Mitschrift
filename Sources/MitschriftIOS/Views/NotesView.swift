@@ -27,6 +27,7 @@ struct NotesScreen: View {
     @State private var editing = false
     @State private var draft = ""
     @State private var confirmDiscard = false
+    @State private var confirmRecreate = false
 
     private var hasChanges: Bool { editing && draft != (recording.notes ?? "") }
 
@@ -101,7 +102,9 @@ struct NotesScreen: View {
                         }
                         Menu {
                             if settings.isConfigured, !recording.transcript.isEmpty {
-                                Button(action: recreate) {
+                                Button {
+                                    if recording.notes != nil { confirmRecreate = true } else { recreate() }
+                                } label: {
                                     Label("Neu erstellen", systemImage: "arrow.clockwise")
                                 }
                                 .disabled(recording.isBusy)
@@ -115,6 +118,10 @@ struct NotesScreen: View {
                     }
                 }
             }
+        }
+        .confirmationDialog("Das vorhandene Protokoll wird durch ein neu erstelltes ersetzt. Eigene Änderungen gehen dabei verloren.", isPresented: $confirmRecreate, titleVisibility: .visible) {
+            Button("Neu erstellen", role: .destructive, action: recreate)
+            Button("Abbrechen", role: .cancel) {}
         }
         .confirmationDialog("Änderungen am Protokoll verwerfen?", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("Verwerfen", role: .destructive) { editing = false }

@@ -121,6 +121,8 @@ final class OpenRecording: ObservableObject {
     func saveNotes(_ markdown: String) {
         let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
         notes = trimmed.isEmpty ? nil : markdown
+        // Ab jetzt stammt der Text nicht mehr allein vom Modell.
+        notesModel = nil
         guard let library else { return }
         do {
             if let notes {
