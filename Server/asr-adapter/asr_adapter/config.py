@@ -61,8 +61,12 @@ class Settings:
     llm_model: str = "local"
     llm_api_key: str | None = None
     llm_timeout_seconds: float = 180.0
-    llm_max_input_chars: int = 120_000
+    #: Obergrenze für die Länge einer Mitschrift (rund zehn Stunden Rede); länger → 413.
+    llm_max_input_chars: int = 600_000
     llm_max_output_tokens: int = 2048
+    llm_summary_max_output_tokens: int = 4096
+    #: Ab dieser Länge wird eine Mitschrift in Teilen vorverdichtet (60 000 Zeichen ≈ 18 000 Tokens).
+    llm_chunk_chars: int = 60_000
     llm_temperature: float = 0.2
 
 
@@ -120,7 +124,9 @@ def settings_from_env() -> Settings:
         llm_model=os.environ.get("LLM_MODEL", "").strip() or "local",
         llm_api_key=os.environ.get("LLM_API_KEY") or None,
         llm_timeout_seconds=_env_float("LLM_TIMEOUT_SECONDS", 180.0),
-        llm_max_input_chars=_env_int("LLM_MAX_INPUT_CHARS", 120_000),
+        llm_max_input_chars=_env_int("LLM_MAX_INPUT_CHARS", 600_000),
         llm_max_output_tokens=_env_int("LLM_MAX_OUTPUT_TOKENS", 2048),
+        llm_summary_max_output_tokens=_env_int("LLM_SUMMARY_MAX_OUTPUT_TOKENS", 4096),
+        llm_chunk_chars=_env_int("LLM_CHUNK_CHARS", 60_000),
         llm_temperature=_env_float("LLM_TEMPERATURE", 0.2),
     )

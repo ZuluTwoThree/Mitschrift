@@ -130,3 +130,15 @@ Zum Prüfen auf dem iPhone, nach dem Update der App:
 - [ ] App während einer Aufnahme hart beenden (App-Umschalter, nach oben wischen), neu starten. Erwartung: die Aufnahme steht in der Liste mit Marke „unterbrochen“ und ist abspielbar und nachträglich transkribierbar.
 - [ ] Die Gerätetests aus dem Abschnitt oben (Flugmodus, Anruf, Bildschirmsperre, Mobilfunk) stehen weiterhin aus.
 - [ ] Die kostenlose Signatur läuft um den 11. Oktober 2026 ab; danach die App einmal neu installieren (`zsh Scripts/build-ios.sh device`, iPhone im selben WLAN reicht).
+
+## Stand 2026-10-06: Mitschrift bearbeiten, Zusammenfassung
+
+Unter der Mitschrift gibt es „Bearbeiten“ (Schere): Abschnitte entfernen, etwa ein Nebengespräch, weil die Aufnahme weiterlief, und Texte korrigieren, bevor Protokoll oder Zusammenfassung entstehen. Auf Wunsch verschwinden die Stellen auch aus der Audiodatei (Anfang und Ende werden abgeschnitten, dazwischen stummgeschaltet). Daneben steht „Zusammenfassung erstellen“ für Vorträge, Trainings und Infoveranstaltungen. Hinweis: Während der Aufnahme geht das Audio live an den eigenen ASR-Server; der Adapter speichert es nicht.
+
+Zum Prüfen auf dem iPhone:
+
+- [ ] Eine Aufnahme mit einem Nebengespräch am Ende machen, stoppen, „Bearbeiten“: den ersten Satz des Nebengesprächs nach rechts wischen („Ab hier“). Erwartung: Hinweis „N Abschnitte entfernt“, Schalter „Auch aus der Audiodatei entfernen“ an, „Sichern“ fragt nach und kürzt. In der Liste ist die Aufnahme kürzer, beim Abspielen fehlt das Ende.
+- [ ] Einen Abschnitt in der Mitte entfernen (nach links wischen) und einen Text antippen und korrigieren; „Rückgängig“ und „Auswählen“ ausprobieren.
+- [ ] „Zusammenfassung erstellen“ bei einer Schulung oder einem Vortrag. Erwartung: Überblick, Kernaussagen, Inhalte nach Themen, Fragen und Antworten (nur echte Fragen), Hinweise. In der Liste erscheint die Marke „Zusammenfassung“ und öffnet sie direkt.
+- [ ] Nach dem Kürzen einer Aufnahme mit vorhandenem Protokoll steht ein gelber Hinweis, dass es aus der alten Fassung stammt; „Neu erstellen“ im Menü des Protokolls aktualisiert es.
+
