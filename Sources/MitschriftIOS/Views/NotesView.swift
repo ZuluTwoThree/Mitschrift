@@ -1,14 +1,15 @@
 import SwiftUI
 import MitschriftCore
 
-/// Das Protokoll des Assistenten als Blatt über der Aufnahme.
+/// Protokoll oder Zusammenfassung des Assistenten als Blatt über der Aufnahme.
 struct NotesView: View {
     @ObservedObject var recording: OpenRecording
+    var kind: NotesKind
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            NotesScreen(recording: recording)
+            NotesScreen(recording: recording, kind: kind)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Fertig") { dismiss() }
@@ -19,47 +20,59 @@ struct NotesView: View {
     }
 }
 
-/// Die Protokollseite selbst: Markdown mit Überschriften, Aufzählungen und Aufgaben-Kästchen,
-/// dazu Teilen und Neu erstellen. Steht im Blatt nach dem Stoppen und direkt aus der Aufnahmenliste.
+/// Die Seite für Protokoll oder Zusammenfassung: Markdown mit Überschriften, Aufzählungen und
+/// Aufgaben-Kästchen, dazu Bearbeiten, Teilen und Neu erstellen. Steht im Blatt nach dem Stoppen und
+/// direkt aus der Aufnahmenliste.
 struct NotesScreen: View {
     @ObservedObject var recording: OpenRecording
+    var kind: NotesKind
     @EnvironmentObject private var settings: SettingsStore
     @State private var editing = false
     @State private var draft = ""
     @State private var confirmDiscard = false
     @State private var confirmRecreate = false
 
-    private var hasChanges: Bool { editing && draft != (recording.notes ?? "") }
+    private var text: String? { recording.text(kind) }
+    private var hasChanges: Bool { editing && draft != (text ?? "") }
 
     var body: some View {
         Group {
             if editing {
                 MarkdownEditor(text: $draft)
-            } else if recording.activity == .writingNotes {
+            } else if recording.activity == .writing(kind) {
                 VStack(spacing: 12) {
                     ProgressView().tint(Theme.mint)
-                    Text("Der Assistent liest die Mitschrift und schreibt das Protokoll.")
+                    Text(kind == .summary ? "Der Assistent liest die Mitschrift und schreibt die Zusammenfassung."
+                                          : "Der Assistent liest die Mitschrift und schreibt das Protokoll.")
                         .font(Theme.Fonts.status)
                         .foregroundStyle(Theme.mist)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
                 }
-            } else if let notes = recording.notes {
+            } else if let text {
                 ScrollView {
-                    MarkdownNotes(markdown: notes) { line in recording.toggleTask(atLine: line) }
+                    if recording.outdated.contains(kind) {
+                        Text("Die Mitschrift wurde nach dem Erstellen bearbeitet. Über „Neu erstellen“ entsteht der Text aus der aktuellen Fassung.")
+                            .font(Theme.Fonts.footnote)
+                            .foregroundStyle(Theme.amber)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, Theme.gutter)
+                            .padding(.top, 12)
+                    }
+                    MarkdownNotes(markdown: text) { line in recording.toggleTask(atLine: line, kind: kind) }
                         .padding(.horizontal, Theme.gutter)
                         .padding(.vertical, 12)
                         .textSelection(.enabled)
                 }
             } else {
                 VStack(spacing: 12) {
-                    Text(recording.error ?? "Noch kein Protokoll.")
+                    Text(recording.error ?? (kind == .summary ? "Noch keine Zusammenfassung." : "Noch kein Protokoll."))
                         .font(Theme.Fonts.status)
                         .foregroundStyle(recording.error == nil ? Theme.mist : Theme.amber)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
                     if settings.isConfigured, !recording.transcript.isEmpty {
-                        Button("Protokoll erstellen", action: recreate)
+                        Button("\(kind.title) erstellen", action: recreate)
                             .buttonStyle(PaperButtonStyle(prominent: true))
                     }
                 }
@@ -67,7 +80,7 @@ struct NotesScreen: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.night)
-        .navigationTitle(editing ? "Bearbeiten" : "Protokoll")
+        .navigationTitle(editing ? "Bearbeiten" : kind.title)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(editing)
         .toolbar {
@@ -79,7 +92,7 @@ struct NotesScreen: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Sichern") {
-                        recording.saveNotes(draft)
+                        recording.saveNotes(draft, kind: kind)
                         editing = false
                     }
                     .fontWeight(.semibold)
@@ -87,29 +100,29 @@ struct NotesScreen: View {
             } else {
                 ToolbarItem(placement: .primaryAction) {
                     HStack(spacing: 14) {
-                        if recording.notes != nil {
+                        if text != nil {
                             Button {
-                                draft = recording.notes ?? ""
+                                draft = text ?? ""
                                 editing = true
                             } label: {
                                 Image(systemName: "pencil")
                             }
-                            .accessibilityLabel("Protokoll bearbeiten")
+                            .accessibilityLabel("\(kind.title) bearbeiten")
                             .disabled(recording.isBusy)
                         }
-                        if let url = recording.item.notesURL, recording.notes != nil {
+                        if let url = recording.item.url(for: kind), text != nil {
                             ShareLink(item: url) { Image(systemName: "square.and.arrow.up") }
                         }
                         Menu {
                             if settings.isConfigured, !recording.transcript.isEmpty {
                                 Button {
-                                    if recording.notes != nil { confirmRecreate = true } else { recreate() }
+                                    if text != nil { confirmRecreate = true } else { recreate() }
                                 } label: {
                                     Label("Neu erstellen", systemImage: "arrow.clockwise")
                                 }
                                 .disabled(recording.isBusy)
                             }
-                            if let model = recording.notesModel {
+                            if let model = recording.models[kind] {
                                 Text("Modell: \(model)")
                             }
                         } label: {
@@ -119,11 +132,11 @@ struct NotesScreen: View {
                 }
             }
         }
-        .confirmationDialog("Das vorhandene Protokoll wird durch ein neu erstelltes ersetzt. Eigene Änderungen gehen dabei verloren.", isPresented: $confirmRecreate, titleVisibility: .visible) {
+        .confirmationDialog("\(kind == .summary ? "Die vorhandene Zusammenfassung" : "Das vorhandene Protokoll") wird durch \(kind == .summary ? "eine neu erstellte" : "ein neu erstelltes") ersetzt. Eigene Änderungen gehen dabei verloren.", isPresented: $confirmRecreate, titleVisibility: .visible) {
             Button("Neu erstellen", role: .destructive, action: recreate)
             Button("Abbrechen", role: .cancel) {}
         }
-        .confirmationDialog("Änderungen am Protokoll verwerfen?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+        .confirmationDialog("Änderungen \(kind == .summary ? "an der Zusammenfassung" : "am Protokoll") verwerfen?", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("Verwerfen", role: .destructive) { editing = false }
             Button("Weiter bearbeiten", role: .cancel) {}
         }
@@ -131,8 +144,8 @@ struct NotesScreen: View {
         .tint(Theme.coral)
         .onAppear {
             #if DEBUG
-            if ProcessInfo.processInfo.environment["MITSCHRIFT_DEV_SHOW_NOTES"] == "edit", let notes = recording.notes {
-                draft = notes
+            if ProcessInfo.processInfo.environment["MITSCHRIFT_DEV_SHOW_NOTES"] == "edit", let text {
+                draft = text
                 editing = true
             }
             #endif
@@ -141,7 +154,7 @@ struct NotesScreen: View {
 
     private func recreate() {
         guard let endpoint = settings.endpoint else { return }
-        Task { await recording.createNotes(endpoint: endpoint) }
+        Task { await recording.createNotes(kind: kind, endpoint: endpoint) }
     }
 }
 
@@ -154,6 +167,7 @@ struct MarkdownNotes: View {
     private enum Block {
         case title(String)
         case heading(String)
+        case subheading(String)
         case task(String, done: Bool, line: Int)
         case bullet(String)
         case paragraph(String)
@@ -171,7 +185,7 @@ struct MarkdownNotes: View {
         for (index, rawLine) in markdown.components(separatedBy: "\n").enumerated() {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             if line.isEmpty { flush(); continue }
-            if line.hasPrefix("### ") { flush(); result.append(.heading(String(line.dropFirst(4)))) }
+            if line.hasPrefix("### ") { flush(); result.append(.subheading(String(line.dropFirst(4)))) }
             else if line.hasPrefix("## ") { flush(); result.append(.heading(String(line.dropFirst(3)))) }
             else if line.hasPrefix("# ") { flush(); result.append(.title(String(line.dropFirst(2)))) }
             else if line.hasPrefix("- [ ] ") { flush(); result.append(.task(String(line.dropFirst(6)), done: false, line: index)) }
@@ -197,6 +211,11 @@ struct MarkdownNotes: View {
                         .font(Theme.Fonts.speaker)
                         .foregroundStyle(Theme.mint)
                         .padding(.top, 10)
+                case .subheading(let text):
+                    Text(inline(text))
+                        .font(Theme.Fonts.status.weight(.semibold))
+                        .foregroundStyle(Theme.paper)
+                        .padding(.top, 6)
                 case .task(let text, let done, let line):
                     Button {
                         onToggleTask?(line)

@@ -10,15 +10,33 @@ public struct RecordingItem: Identifiable, Equatable, Sendable {
     public var transcriptDocumentURL: URL?
     public var transcriptTextURL: URL?
     public var notesURL: URL?
+    public var summaryURL: URL?
     /// Die WAV-Datei wurde nicht sauber geschlossen (Absturz während der Aufnahme).
     public var needsRepair: Bool
 
     public var id: String { RecordingNaming.baseName(audioURL.lastPathComponent) }
     public var hasTranscript: Bool { transcriptDocumentURL != nil || transcriptTextURL != nil }
     public var hasNotes: Bool { notesURL != nil }
+    public var hasSummary: Bool { summaryURL != nil }
+
+    /// Die Datei des Protokolls oder der Zusammenfassung, falls vorhanden.
+    public func url(for kind: NotesKind) -> URL? {
+        switch kind {
+        case .minutes: return notesURL
+        case .summary: return summaryURL
+        }
+    }
+
+    public mutating func setURL(_ url: URL?, for kind: NotesKind) {
+        switch kind {
+        case .minutes: notesURL = url
+        case .summary: summaryURL = url
+        }
+    }
 
     public init(audioURL: URL, createdAt: Date, fileSize: Int, duration: TimeInterval? = nil,
-                transcriptDocumentURL: URL? = nil, transcriptTextURL: URL? = nil, notesURL: URL? = nil, needsRepair: Bool = false) {
+                transcriptDocumentURL: URL? = nil, transcriptTextURL: URL? = nil, notesURL: URL? = nil,
+                summaryURL: URL? = nil, needsRepair: Bool = false) {
         self.audioURL = audioURL
         self.createdAt = createdAt
         self.fileSize = fileSize
@@ -26,12 +44,13 @@ public struct RecordingItem: Identifiable, Equatable, Sendable {
         self.transcriptDocumentURL = transcriptDocumentURL
         self.transcriptTextURL = transcriptTextURL
         self.notesURL = notesURL
+        self.summaryURL = summaryURL
         self.needsRepair = needsRepair
     }
 
     /// Alle Dateien dieser Aufnahme, zum Löschen.
     public var allURLs: [URL] {
-        [audioURL, transcriptDocumentURL, transcriptTextURL, notesURL].compactMap { $0 }
+        [audioURL, transcriptDocumentURL, transcriptTextURL, notesURL, summaryURL].compactMap { $0 }
     }
 }
 
@@ -72,7 +91,8 @@ public struct RecordingLibrary: Sendable {
                     duration: duration,
                     transcriptDocumentURL: sidecar(RecordingNaming.transcriptDocumentFileName(forAudioNamed: name)),
                     transcriptTextURL: sidecar(RecordingNaming.transcriptFileName(forAudioNamed: name)),
-                    notesURL: sidecar(RecordingNaming.notesFileName(forAudioNamed: name)),
+                    notesURL: sidecar(RecordingNaming.notesFileName(forAudioNamed: name, kind: .minutes)),
+                    summaryURL: sidecar(RecordingNaming.notesFileName(forAudioNamed: name, kind: .summary)),
                     needsRepair: needsRepair
                 )
             }
@@ -89,7 +109,7 @@ public struct RecordingLibrary: Sendable {
         return repaired
     }
 
-    /// Löscht Audio, Mitschrift und Protokoll einer Aufnahme.
+    /// Löscht Audio, Mitschrift, Protokoll und Zusammenfassung einer Aufnahme.
     public func delete(_ item: RecordingItem, fileManager: FileManager = .default) throws {
         for url in item.allURLs where fileManager.fileExists(atPath: url.path) {
             try fileManager.removeItem(at: url)
@@ -107,10 +127,10 @@ public struct RecordingLibrary: Sendable {
         return (documentURL, textURL)
     }
 
-    /// Speichert das Protokoll als Markdown neben der Audiodatei.
+    /// Speichert Protokoll oder Zusammenfassung als Markdown neben der Audiodatei.
     @discardableResult
-    public func saveNotes(_ markdown: String, forAudio audioURL: URL) throws -> URL {
-        let url = directory.appendingPathComponent(RecordingNaming.notesFileName(forAudioNamed: audioURL.lastPathComponent))
+    public func saveNotes(_ markdown: String, kind: NotesKind = .minutes, forAudio audioURL: URL) throws -> URL {
+        let url = directory.appendingPathComponent(RecordingNaming.notesFileName(forAudioNamed: audioURL.lastPathComponent, kind: kind))
         try markdown.write(to: url, atomically: true, encoding: .utf8)
         return url
     }

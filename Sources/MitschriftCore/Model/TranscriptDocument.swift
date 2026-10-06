@@ -17,8 +17,11 @@ public struct TranscriptDocument: Codable, Equatable, Sendable {
     public var incomplete: Bool
     /// Anzahl der lokal verworfenen oder vom Server abgelehnten Abschnitte.
     public var missingSegments: Int
+    /// Zeitpunkt der letzten Bearbeitung (Abschnitte entfernt oder korrigiert). Protokoll und
+    /// Zusammenfassung, die älter sind, stammen noch aus der vorherigen Fassung.
+    public var editedAt: Date?
 
-    public init(createdAt: Date, language: String, transcript: Transcript, incomplete: Bool = false, missingSegments: Int = 0) {
+    public init(createdAt: Date, language: String, transcript: Transcript, incomplete: Bool = false, missingSegments: Int = 0, editedAt: Date? = nil) {
         version = Self.currentVersion
         self.createdAt = createdAt
         self.language = language
@@ -26,6 +29,7 @@ public struct TranscriptDocument: Codable, Equatable, Sendable {
         speakerNames = transcript.speakerNames
         self.incomplete = incomplete
         self.missingSegments = missingSegments
+        self.editedAt = editedAt
     }
 
     /// Die Mitschrift mit allen Abschnitten als final und den gespeicherten Namen.

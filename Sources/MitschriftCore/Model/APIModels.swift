@@ -99,11 +99,15 @@ public struct NotesRequest: Codable, Equatable, Sendable {
     public var language: String
     public var title: String?
     public var recordedAt: String?
+    /// `minutes` oder `summary`; ältere Server ignorieren das Feld und liefern ein Protokoll.
+    public var kind: NotesKind
 
-    public init(transcript: String, language: String, title: String? = nil, recordedAt: Date? = nil, timeZone: TimeZone = .current) {
+    public init(transcript: String, language: String, title: String? = nil, recordedAt: Date? = nil,
+                timeZone: TimeZone = .current, kind: NotesKind = .minutes) {
         self.transcript = transcript
         self.language = language
         self.title = title
+        self.kind = kind
         // Mit Zeitzonenversatz, damit der Server die Ortszeit des Geräts ins Protokoll schreibt.
         let formatter = ISO8601DateFormatter()
         formatter.timeZone = timeZone
@@ -114,13 +118,22 @@ public struct NotesRequest: Codable, Equatable, Sendable {
 /// Antwort auf `POST /v1/notes`: das Protokoll als Markdown.
 public struct NotesResponse: Codable, Equatable, Sendable {
     public var notes: String
+    /// Die erzeugte Textart als Rohwert; fehlt bei älteren Servern (dann war es ein Protokoll).
+    public var kind: String?
     public var model: String?
     public var diagnostics: NotesDiagnostics?
 
-    public init(notes: String, model: String? = nil, diagnostics: NotesDiagnostics? = nil) {
+    public init(notes: String, kind: String? = nil, model: String? = nil, diagnostics: NotesDiagnostics? = nil) {
         self.notes = notes
+        self.kind = kind
         self.model = model
         self.diagnostics = diagnostics
+    }
+
+    /// Die erzeugte Textart; `nil`, wenn der Server einen unbekannten Wert meldet.
+    public var resolvedKind: NotesKind? {
+        guard let kind else { return .minutes }
+        return NotesKind(rawValue: kind)
     }
 }
 
@@ -128,10 +141,13 @@ public struct NotesDiagnostics: Codable, Equatable, Sendable {
     public var latencyMs: Int?
     public var promptTokens: Int?
     public var completionTokens: Int?
+    /// Zahl der vorverdichteten Teile einer langen Mitschrift (1 = ein Durchgang).
+    public var chunks: Int?
 
-    public init(latencyMs: Int? = nil, promptTokens: Int? = nil, completionTokens: Int? = nil) {
+    public init(latencyMs: Int? = nil, promptTokens: Int? = nil, completionTokens: Int? = nil, chunks: Int? = nil) {
         self.latencyMs = latencyMs
         self.promptTokens = promptTokens
         self.completionTokens = completionTokens
+        self.chunks = chunks
     }
 }

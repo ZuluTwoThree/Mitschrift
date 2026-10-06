@@ -23,8 +23,8 @@ class FakeNotesWriter:
     fail: bool = False
     closed: bool = False
 
-    async def write_notes(self, transcript: str, language: str, title: str | None, recorded_at: str | None) -> NotesResult:
-        self.calls.append({"transcript": transcript, "language": language, "title": title, "recorded_at": recorded_at})
+    async def write_notes(self, transcript: str, language: str, title: str | None, recorded_at: str | None, kind: str = "minutes") -> NotesResult:
+        self.calls.append({"transcript": transcript, "language": language, "title": title, "recorded_at": recorded_at, "kind": kind})
         if self.fail:
             raise NotesError("simulierter Ausfall")
         return NotesResult(notes=NOTES_MD, model="Qwen3-8B", prompt_tokens=1800, completion_tokens=420, latency_ms=2345)
@@ -49,10 +49,31 @@ async def test_notes_success() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "notes": NOTES_MD,
+        "kind": "minutes",
         "model": "Qwen3-8B",
-        "diagnostics": {"latencyMs": 2345, "promptTokens": 1800, "completionTokens": 420},
+        "diagnostics": {"latencyMs": 2345, "promptTokens": 1800, "completionTokens": 420, "chunks": 1},
     }
-    assert writer.calls == [{"transcript": TRANSCRIPT, "language": "en", "title": "Jour fixe", "recorded_at": "2026-10-04T10:00:00Z"}]
+    assert writer.calls == [{"transcript": TRANSCRIPT, "language": "en", "title": "Jour fixe", "recorded_at": "2026-10-04T10:00:00Z", "kind": "minutes"}]
+
+
+async def test_notes_summary_kind_is_passed_and_echoed() -> None:
+    writer = FakeNotesWriter()
+    async with notes_client(writer) as client:
+        response = await client.post("/v1/notes", headers=AUTH, json={"transcript": TRANSCRIPT, "kind": "summary"})
+        assert (await client.post("/v1/notes", headers=AUTH, json={"transcript": TRANSCRIPT, "kind": None})).json()["kind"] == "minutes"
+    assert response.status_code == 200
+    assert response.json()["kind"] == "summary"
+    assert [c["kind"] for c in writer.calls] == ["summary", "minutes"]
+
+
+@pytest.mark.parametrize("kind", ["protokoll", "", 3, ["summary"]])
+async def test_notes_rejects_unknown_kind(kind: object) -> None:
+    writer = FakeNotesWriter()
+    async with notes_client(writer) as client:
+        response = await client.post("/v1/notes", headers=AUTH, json={"transcript": TRANSCRIPT, "kind": kind})
+    assert response.status_code == 400
+    assert response.json()["error"] == "invalid_kind"
+    assert writer.calls == []
 
 
 async def test_notes_defaults_language_and_optional_fields() -> None:
@@ -129,9 +150,11 @@ async def test_notes_unavailable_when_writer_fails() -> None:
 
 async def test_health_reports_notes() -> None:
     async with notes_client(None) as client:
-        assert (await client.get("/v1/health")).json()["notes"] is False
+        body = (await client.get("/v1/health")).json()
+        assert body["notes"] is False and body["notesKinds"] == []
     async with notes_client(FakeNotesWriter()) as client:
-        assert (await client.get("/v1/health")).json()["notes"] is True
+        body = (await client.get("/v1/health")).json()
+        assert body["notes"] is True and body["notesKinds"] == ["minutes", "summary"]
 
 
 async def test_app_builds_chat_client_from_llm_url_and_closes_it() -> None:
@@ -260,3 +283,95 @@ def test_recorded_at_is_rendered_readable_in_user_prompt() -> None:
     assert format_recorded_at("gestern", english=False) == "gestern"
     user = build_messages("Text", "de", None, "2026-10-04T12:30:00+02:00")[1]["content"]
     assert "Datum: 04.10.2026, 12:30" in user
+
+
+
+# --- Zusammenfassung und lange Mitschriften ---
+
+
+async def test_chat_client_summary_uses_summary_prompt_and_larger_budget() -> None:
+    seen: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json=chat_response("# Zusammenfassung\n\n## Überblick\nKurz."))
+
+    client = OpenAIChatClient("http://llm.test", max_output_tokens=2048, summary_max_output_tokens=4096, transport=httpx.MockTransport(handler))
+    try:
+        result = await client.write_notes(TRANSCRIPT, "de", None, None, kind="summary")
+        await client.write_notes(TRANSCRIPT, "en", None, None, kind="summary")
+    finally:
+        await client.aclose()
+    assert result.chunks == 1
+    assert seen[0]["max_tokens"] == 4096
+    assert "## Kernaussagen" in seen[0]["messages"][0]["content"] and "Training" in seen[0]["messages"][0]["content"]
+    assert "## Aufgaben" not in seen[0]["messages"][0]["content"]
+    assert "training" in seen[1]["messages"][0]["content"]
+
+
+async def test_chat_client_condenses_long_transcript_in_parts() -> None:
+    seen: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        seen.append(payload)
+        is_partial = payload["messages"][1]["content"].startswith("Teil ")
+        content = f"- Notiz {len(seen)}" if is_partial else NOTES_MD
+        return httpx.Response(200, json=chat_response(content, usage={"prompt_tokens": 100, "completion_tokens": 10}))
+
+    lines = [f"Sprecher {i % 2 + 1}: " + "Wort " * 40 for i in range(12)]  # 12 Zeilen à ~215 Zeichen
+    transcript = "\n".join(lines)
+    client = OpenAIChatClient("http://llm.test", chunk_chars=1000, transport=httpx.MockTransport(handler))
+    try:
+        result = await client.write_notes(transcript, "de", "Schulung", None, kind="minutes")
+    finally:
+        await client.aclose()
+
+    partials, final = seen[:-1], seen[-1]
+    assert len(partials) == result.chunks == 3
+    for index, payload in enumerate(partials, start=1):
+        user = payload["messages"][1]["content"]
+        assert user.startswith(f"Teil {index} von 3 der Mitschrift:")
+        assert payload["max_tokens"] == 1536
+        assert "Besprechungsprotokoll" in payload["messages"][0]["content"]
+    # Jede Zeile der Mitschrift landet in genau einem Teil, keine wird zerschnitten.
+    joined = "\n".join(p["messages"][1]["content"].split("\n\n", 1)[1] for p in partials)
+    assert joined == transcript
+    user = final["messages"][1]["content"]
+    assert "Notizen zur Mitschrift" in user and "Titel: Schulung" in user
+    assert "- Notiz 1" in user and "- Notiz 3" in user and "Sprecher 1:" not in user
+    assert result.notes == NOTES_MD
+    assert result.prompt_tokens == 400 and result.completion_tokens == 40
+
+
+async def test_chat_client_condensing_stops_after_max_rounds() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json=chat_response("x " * 400))  # Notizen bleiben länger als ein Teil
+
+    client = OpenAIChatClient("http://llm.test", chunk_chars=500, transport=httpx.MockTransport(handler))
+    try:
+        result = await client.write_notes("\n".join(["y " * 200] * 4), "de", None, None)
+    finally:
+        await client.aclose()
+    assert result.prompt_tokens is None  # Antworten ohne usage
+    assert calls < 60  # endet, statt endlos weiter zu verdichten
+
+
+def test_split_transcript_respects_lines_and_limit() -> None:
+    from asr_adapter.llm_client import split_transcript
+
+    assert split_transcript("kurz", 100) == ["kurz"]
+    text = "A: eins zwei.\nB: drei vier.\nA: fünf sechs."
+    chunks = split_transcript(text, 30)
+    assert all(len(c) <= 30 for c in chunks)
+    assert "\n".join(chunks) == text
+    long_line = "Satz eins ist hier. " * 20
+    chunks = split_transcript(long_line.strip(), 100)
+    assert all(len(c) <= 100 for c in chunks)
+    assert all(c.endswith(".") for c in chunks[:-1])
+    assert " ".join(chunks).split() == long_line.split()
+    assert all(len(c) <= 50 for c in split_transcript("x" * 120, 50))

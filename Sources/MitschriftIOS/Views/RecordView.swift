@@ -273,6 +273,7 @@ struct RecordView: View {
         let id = RecordingNaming.baseName(result.audioURL.lastPathComponent)
         if let current, current.id == id {
             if current.item.audioURL != result.audioURL { current.audioMoved(to: result.audioURL) }
+            current.audioLocked = result.compressing
             if !result.compressing { library.reload() }
             return
         }
@@ -283,6 +284,7 @@ struct RecordView: View {
         item.createdAt = result.createdAt
         current = OpenRecording(item: item, transcript: result.transcript, language: result.language,
                                 incomplete: result.liveIncomplete, missingSegments: result.missingSegments, library: library)
+        current?.audioLocked = result.compressing
         self.library.reload()
     }
 

@@ -88,6 +88,26 @@ Aufgaben sind, liefert es für G137 „Keine Aufgaben festgehalten.“ und für 
 Zusagen samt Frist sowie die Terminentscheidung mit Zitat. Eine Stunde Gespräch (etwa 9 000 Wörter, 18 000 Token)
 passt in den Kontext; längere Mitschriften lehnt der Adapter mit 413 ab (`LLM_MAX_INPUT_CHARS`).
 
+### Zusammenfassung und lange Mitschriften, 2026-10-06
+
+Der laufende Server hat vier Slots mit gemeinsamem KV-Cache; ein einzelner Auftrag nutzt die vollen 32 768 Token
+(gemessen: 31 520 Prompt-Token in 11 s). Deutsch braucht bei Qwen3 etwa 3,4 Zeichen je Token. Ab
+`LLM_CHUNK_CHARS` (60 000 Zeichen, gut eine Stunde Rede) teilt der Adapter die Mitschrift, verdichtet die Teile
+nacheinander und schreibt den Endtext aus den Notizen; die Obergrenze liegt jetzt bei 600 000 Zeichen.
+
+| Eingabe | Art | Teile | Prompt-Token | Antwort-Token | Dauer |
+| --- | --- | --- | --- | --- | --- |
+| Freud, „Über Psychoanalyse“, 1. Vorlesung (25 000 Zeichen, ein Sprecher) | Zusammenfassung | 1 | 7 424 | 1 295 | 15 s |
+| alle fünf Vorlesungen (105 000 Zeichen) | Zusammenfassung | 2 | 32 178 | 5 654 | 68 s |
+| Sicherheitsunterweisung (Testaufnahme, 10 Beiträge, 2 Sprechende) | Zusammenfassung | 1 | – | – | 5 s |
+
+Qualität: Gliederung und Inhalte treffen auch über zwei Teile. Ohne eigene Regeln erfand das Modell „Fragen und
+Antworten“ aus rhetorischen Fragen des Vortragenden, „Übungen“ unter Hinweise und machte aus „zweihundertzwölf“ die
+Nummer „20112“. Mit den Regeln „nur echte Fragen anderer Personen“, „nur ausdrücklich Genanntes“ und „Zahlen genau
+übernehmen“ ist das in je zwei Läufen behoben. Beim Protokoll erkennt Qwen3-8B eine Vereinbarung mit Zustimmung
+(„dann verschieben wir den Termin auf Freitag“ – „Einverstanden“) weiterhin nicht zuverlässig als Entscheidung;
+erfundene Aufgaben bleiben aber aus, auch die offene Frage „Wer kümmert sich um …?“ landet unter offenen Punkten.
+
 ## Aufnahmeformat AAC statt WAV
 
 Siehe `docs/planning/audioformat.md`: G137 nach AAC 48 kbit/s und zurück ergibt 16,2 % WER statt 15,9 % (32 kbit/s: 16,8 %), bei einem Fünftel der Dateigröße. Zwei Replays desselben Originals sind identisch (0,0 %).

@@ -90,6 +90,9 @@ services:
       LLM_MODEL: ${LLM_MODEL:-local}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-180}
+      LLM_CHUNK_CHARS: ${LLM_CHUNK_CHARS:-60000}
+      LLM_MAX_INPUT_CHARS: ${LLM_MAX_INPUT_CHARS:-600000}
+      LLM_SUMMARY_MAX_OUTPUT_TOKENS: ${LLM_SUMMARY_MAX_OUTPUT_TOKENS:-4096}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

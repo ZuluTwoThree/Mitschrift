@@ -17,9 +17,9 @@ public enum RecordingNaming {
         "\(baseName(audioName))-Mitschrift.json"
     }
 
-    /// `Gespräch-…-Protokoll.md`: das vom Assistenten erstellte Protokoll.
-    public static func notesFileName(forAudioNamed audioName: String) -> String {
-        "\(baseName(audioName))-Protokoll.md"
+    /// `Gespräch-…-Protokoll.md` bzw. `Gespräch-…-Zusammenfassung.md`: der vom Assistenten erstellte Text.
+    public static func notesFileName(forAudioNamed audioName: String, kind: NotesKind = .minutes) -> String {
+        "\(baseName(audioName))-\(kind.title).md"
     }
 
     /// Der gemeinsame Namensstamm aller Dateien einer Aufnahme (`Gespräch-2026-10-02_18-30-00`).

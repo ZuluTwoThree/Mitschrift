@@ -40,11 +40,12 @@ Ohne Token erreichbar, liefert nur Betriebsdaten.
   "maxSessions": 4,
   "language": "de",
   "diarization": false,
-  "notes": true
+  "notes": true,
+  "notesKinds": ["minutes", "summary"]
 }
 ```
 
-`diarization` sagt, ob der Server Sprecherlabels liefert (siehe `speaker` bei den Segmenten). `notes` sagt, ob der Protokoll-Assistent (`POST /v1/notes`) konfiguriert ist; das LLM selbst wird dafür nicht angefragt. `status` ist `ok`, `loading` (Modell wird noch geladen, HTTP 503) oder `degraded` (Modell geladen, aber `whisper-server` antwortet nicht, HTTP 503).
+`diarization` sagt, ob der Server Sprecherlabels liefert (siehe `speaker` bei den Segmenten). `notes` sagt, ob der Protokoll-Assistent (`POST /v1/notes`) konfiguriert ist; das LLM selbst wird dafür nicht angefragt. `notesKinds` nennt die unterstützten Textarten (fehlt bei älteren Servern, dann nur `minutes`). `status` ist `ok`, `loading` (Modell wird noch geladen, HTTP 503) oder `degraded` (Modell geladen, aber `whisper-server` antwortet nicht, HTTP 503).
 
 ### `POST /v1/live-transcriptions/segments`
 
@@ -123,7 +124,9 @@ Idempotenz: Der Server speichert die Abschlussantwort. Ein wiederholter `finish`
 
 ### `POST /v1/notes`
 
-Erzeugt aus einer fertigen Mitschrift ein Besprechungsprotokoll in Markdown (Zusammenfassung, Themen, Entscheidungen, Aufgaben, offene Punkte). Der Adapter reicht den Text an ein OpenAI-kompatibles LLM weiter; der Aufruf ist synchron und kann je nach Länge mehrere Minuten dauern. Die App sollte dafür einen Timeout deutlich über dem der Segmente ansetzen (Serverseite: 180 s).
+Erzeugt aus einer fertigen Mitschrift einen Text in Markdown: ein Besprechungsprotokoll (`kind: "minutes"`, Standard: Zusammenfassung, Themen, Entscheidungen, Aufgaben, offene Punkte) oder eine Zusammenfassung zum Nachlesen für Vorträge, Trainings und Informationsveranstaltungen (`kind: "summary"`). Der Adapter reicht den Text an ein OpenAI-kompatibles LLM weiter; der Aufruf ist synchron und kann je nach Länge mehrere Minuten dauern. Die App sollte dafür einen Timeout deutlich über dem der Segmente ansetzen (Serverseite: 180 s je LLM-Aufruf).
+
+Mitschriften über `LLM_CHUNK_CHARS` (Startwert 60 000 Zeichen, gut eine Stunde Rede) teilt der Adapter an Zeilengrenzen, verdichtet jeden Teil nacheinander zu Notizen und erzeugt den Endtext aus diesen Notizen. Das dauert entsprechend länger; `diagnostics.chunks` nennt die Zahl der Teile.
 
 Request-Header: `Authorization: Bearer <token>`, `Content-Type: application/json`, optional `X-Mitschrift-Client`.
 
@@ -134,30 +137,35 @@ Request-Body:
   "transcript": "Anna: Guten Morgen …\nBernd: …",
   "language": "de",
   "title": "Jour fixe",
-  "recordedAt": "2026-10-04T10:00:00Z"
+  "recordedAt": "2026-10-04T10:00:00Z",
+  "kind": "minutes"
 }
 ```
 
 | Feld | Pflicht | Bedeutung |
 | --- | --- | --- |
-| `transcript` | ja | Mitschrift als Text, nach Trim nicht leer; üblicherweise eine Zeile je Segment, bei Sprechertrennung mit vorangestelltem Sprecher (`Sprecher 2: …`). Länger als das Serverlimit (Startwert 120 000 Zeichen) → 413 |
+| `transcript` | ja | Mitschrift als Text, nach Trim nicht leer; üblicherweise eine Zeile je Segment, bei Sprechertrennung mit vorangestelltem Sprecher (`Sprecher 2: …`). Länger als das Serverlimit (Startwert 600 000 Zeichen) → 413 |
 | `language` | nein | `de` (Standard) oder `en`; `auto` und fehlend gelten als `de`, andere Werte → 400 `invalid_language` |
 | `title` | nein | Freier Titel, erscheint in der Kopfzeile des Protokolls |
 | `recordedAt` | nein | Aufnahmezeitpunkt als String (RFC 3339), erscheint in der Kopfzeile des Protokolls; wird nicht weiter geprüft |
+| `kind` | nein | `minutes` (Standard, auch bei `null`) oder `summary`; andere Werte → 400 `invalid_kind` |
 
 Antwort 200:
 
 ```json
 {
   "notes": "# Protokoll\n\n## Zusammenfassung\n…",
+  "kind": "minutes",
   "model": "Qwen3-8B",
-  "diagnostics": { "latencyMs": 2345, "promptTokens": 1800, "completionTokens": 420 }
+  "diagnostics": { "latencyMs": 2345, "promptTokens": 1800, "completionTokens": 420, "chunks": 1 }
 }
 ```
 
 - `notes`: das Protokoll in Markdown mit fester Struktur: `# Protokoll` (optional eine Zeile mit Titel und Datum), dann `## Zusammenfassung`, `## Themen`, `## Entscheidungen`, `## Aufgaben` (Checkliste `- [ ] Wer: Was (bis wann)`), `## Offene Punkte`. Fehlende Angaben stehen als „nicht genannt“, leere Abschnitte als „Keine Entscheidungen festgehalten.“, „Keine Aufgaben festgehalten.“ bzw. „Keine.“. Die App zeigt den Text an oder speichert ihn; sie verlässt sich nicht darauf, ihn maschinell zu zerlegen.
+  Bei `kind: "summary"`: `# Zusammenfassung` (optional Titel und Datum), `## Überblick`, `## Kernaussagen`, `## Inhalte` (je Themenblock `### Thema` mit Aufzählung), `## Fragen und Antworten`, `## Hinweise` (Materialien, Termine, Links); leere Abschnitte als „Keine.“.
+- `kind`: die erzeugte Textart. Fehlt das Feld (älterer Server), war es ein Protokoll; die App prüft das, bevor sie eine Zusammenfassung speichert.
 - `model`: das verwendete Modell, aus der Antwort des LLM oder der Serverkonfiguration.
-- `diagnostics`: optional, alle Felder optional, keine Inhalte.
+- `diagnostics`: optional, alle Felder optional, keine Inhalte. Tokenzahlen und Latenz summieren alle LLM-Aufrufe; `chunks` ist die Zahl der vorverdichteten Teile (1 = ein Durchgang).
 
 Fehler:
 
@@ -165,6 +173,7 @@ Fehler:
 | --- | --- | --- |
 | 400 | `invalid_request` | Kein JSON, kein Objekt, `transcript` fehlt, leer oder kein String, `title`/`recordedAt`/`language` mit falschem Typ |
 | 400 | `invalid_language` | `language` ist weder `de`, `en` noch `auto` |
+| 400 | `invalid_kind` | `kind` ist weder `minutes` noch `summary` |
 | 401 | `unauthorized` | Token fehlt oder falsch |
 | 413 | `transcript_too_long` | Mitschrift länger als das Serverlimit |
 | 503 | `llm_unavailable` | Protokoll-Assistent nicht konfiguriert, LLM nicht erreichbar, Timeout, HTTP-Fehler oder unbrauchbare Antwort; `message` ist „Der Protokoll-Assistent ist gerade nicht verfügbar.“ |

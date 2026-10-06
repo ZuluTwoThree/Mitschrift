@@ -143,3 +143,108 @@ enum AudioArchiver {
         }
     }
 }
+
+/// Kürzt eine gespeicherte Aufnahme nach einem `AudioCutPlan`: Anfang und Ende fallen weg, Bereiche
+/// dazwischen werden still. Die Datei behält Namen und Format (M4A bleibt AAC 48 kbit/s, WAV bleibt
+/// PCM), damit Mitschrift und Protokoll daneben weiter zur Aufnahme passen. Das Original wird erst
+/// ersetzt, wenn die neue Datei vollständig lesbar ist.
+enum AudioEditor {
+    enum Failure: LocalizedError {
+        case unreadable
+        case writeFailed
+        case nothingLeft
+
+        var errorDescription: String? {
+            switch self {
+            case .unreadable: return "Die Aufnahmedatei konnte nicht gelesen werden."
+            case .writeFailed: return "Die gekürzte Aufnahme konnte nicht geschrieben werden."
+            case .nothingLeft: return "Nach dem Kürzen bliebe von der Aufnahme nichts übrig."
+            }
+        }
+    }
+
+    static func apply(_ plan: AudioCutPlan, to url: URL) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try applySync(plan, to: url)
+        }.value
+    }
+
+    private static func applySync(_ plan: AudioCutPlan, to url: URL) throws {
+        guard !plan.isEmpty else { return }
+        let fileManager = FileManager.default
+        let temporary = fileManager.temporaryDirectory
+            .appendingPathComponent("schnitt-\(UUID().uuidString)")
+            .appendingPathExtension(url.pathExtension)
+        defer { try? fileManager.removeItem(at: temporary) }
+        try write(plan, from: url, to: temporary)
+        guard let written = AudioFileReader.duration(of: temporary), written > 0 else { throw Failure.writeFailed }
+        _ = try fileManager.replaceItemAt(url, withItemAt: temporary)
+    }
+
+    /// Eigene Funktion, damit die Ausgabedatei beim Rücksprung geschlossen und finalisiert ist.
+    private static func write(_ plan: AudioCutPlan, from sourceURL: URL, to targetURL: URL) throws {
+        guard let input = try? AVAudioFile(forReading: sourceURL) else { throw Failure.unreadable }
+        let format = input.processingFormat
+        let rate = format.sampleRate
+        func frame(_ seconds: Double) -> AVAudioFramePosition {
+            min(input.length, max(0, AVAudioFramePosition((seconds * rate).rounded())))
+        }
+        let first = frame(plan.leadingCut)
+        let last = plan.end.map(frame) ?? input.length
+        guard last > first else { throw Failure.nothingLeft }
+        let muted = plan.muted.map { frame($0.lowerBound)..<frame($0.upperBound) }
+
+        let settings: [String: Any]
+        if sourceURL.pathExtension.lowercased() == "m4a" {
+            settings = [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: rate,
+                AVNumberOfChannelsKey: Int(format.channelCount),
+                AVEncoderBitRateKey: AudioArchiver.bitRate,
+            ]
+        } else {
+            settings = input.fileFormat.settings
+        }
+        let output: AVAudioFile
+        do {
+            output = try AVAudioFile(forWriting: targetURL, settings: settings, commonFormat: format.commonFormat, interleaved: format.isInterleaved)
+        } catch {
+            throw Failure.writeFailed
+        }
+
+        input.framePosition = first
+        let capacity: AVAudioFrameCount = 32_768
+        while input.framePosition < last {
+            let start = input.framePosition
+            let count = AVAudioFrameCount(min(AVAudioFramePosition(capacity), last - start))
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: count) else { throw Failure.writeFailed }
+            try input.read(into: buffer, frameCount: count)
+            if buffer.frameLength == 0 { break }
+            let chunk = start..<(start + AVAudioFramePosition(buffer.frameLength))
+            for range in muted where range.overlaps(chunk) {
+                let lower = Int(max(range.lowerBound, chunk.lowerBound) - start)
+                let upper = Int(min(range.upperBound, chunk.upperBound) - start)
+                silence(buffer, from: lower, to: upper)
+            }
+            try output.write(from: buffer)
+        }
+    }
+
+    /// Setzt die Frames `lower..<upper` aller Kanäle auf Stille.
+    private static func silence(_ buffer: AVAudioPCMBuffer, from lower: Int, to upper: Int) {
+        guard upper > lower else { return }
+        let channels = Int(buffer.format.channelCount)
+        let interleaved = buffer.format.isInterleaved
+        let stride = interleaved ? channels : 1
+        let planes = interleaved ? 1 : channels
+        let start = lower * stride
+        let count = (upper - lower) * stride
+        if let data = buffer.floatChannelData {
+            for plane in 0..<planes { (data[plane] + start).update(repeating: 0, count: count) }
+        } else if let data = buffer.int16ChannelData {
+            for plane in 0..<planes { (data[plane] + start).update(repeating: 0, count: count) }
+        } else if let data = buffer.int32ChannelData {
+            for plane in 0..<planes { (data[plane] + start).update(repeating: 0, count: count) }
+        }
+    }
+}

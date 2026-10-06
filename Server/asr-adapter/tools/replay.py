@@ -58,6 +58,7 @@ def main() -> int:
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--speakers", action="store_true", help="Absätze je Sprecherwechsel ausgeben („Sprecher N: …“), wie der Export der App")
     parser.add_argument("--notes", action="store_true", help="Danach den Protokoll-Assistenten (/v1/notes) aufrufen und das Protokoll ausgeben")
+    parser.add_argument("--summary", action="store_true", help="Wie --notes, aber eine Zusammenfassung (kind=summary) statt eines Protokolls")
     args = parser.parse_args()
 
     with wave.open(args.wav, "rb") as handle:
@@ -103,15 +104,16 @@ def main() -> int:
 
     text = speaker_paragraphs(finals) if args.speakers else " ".join(segment["text"].strip() for segment in finals if segment["text"].strip())
     print(text)
-    if args.notes:
+    if args.notes or args.summary:
+        kind = "summary" if args.summary else "minutes"
         started = time.perf_counter()
         with httpx.Client(base_url=args.url, timeout=300.0) as client:
-            response = client.post("/v1/notes", json={"transcript": text, "language": args.language}, headers=headers)
+            response = client.post("/v1/notes", json={"transcript": text, "language": args.language, "kind": kind}, headers=headers)
         if response.status_code != 200:
             print(f"notes: HTTP {response.status_code} {response.text}", file=sys.stderr)
             return 1
         body = response.json()
-        print(f"\n--- Protokoll ({body.get('model')}, {1000 * (time.perf_counter() - started):.0f} ms, {body.get('diagnostics')}) ---")
+        print(f"\n--- {'Zusammenfassung' if args.summary else 'Protokoll'} ({body.get('model')}, {1000 * (time.perf_counter() - started):.0f} ms, {body.get('diagnostics')}) ---")
         print(body["notes"])
     return 0
 

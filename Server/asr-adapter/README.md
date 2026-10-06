@@ -76,16 +76,18 @@ Bestätigt der Server die Option nicht (kein Diarization-Modell geladen), läuft
 
 ## Protokoll-Assistent
 
-`POST /v1/notes` übergibt eine Mitschrift (Transkript als Text) an ein OpenAI-kompatibles LLM (z. B. `llama-server` mit Qwen3) und liefert ein Besprechungsprotokoll in Markdown mit Zusammenfassung, Themen, Entscheidungen, Aufgaben und offenen Punkten. Der Vertrag steht in `docs/api/segment-contract.md`. Ohne `LLM_URL` ist die Funktion aus, `/v1/health` meldet `"notes": false` und der Endpunkt antwortet mit 503 `llm_unavailable`.
+`POST /v1/notes` übergibt eine Mitschrift (Transkript als Text) an ein OpenAI-kompatibles LLM (z. B. `llama-server` mit Qwen3) und liefert ein Besprechungsprotokoll in Markdown mit Zusammenfassung, Themen, Entscheidungen, Aufgaben und offenen Punkten, mit `"kind": "summary"` stattdessen eine Zusammenfassung zum Nachlesen für Vorträge und Trainings. Lange Mitschriften (über `LLM_CHUNK_CHARS`) verdichtet der Adapter erst in Teilen und schreibt den Endtext aus den Teilnotizen. Der Vertrag steht in `docs/api/segment-contract.md`. Ohne `LLM_URL` ist die Funktion aus, `/v1/health` meldet `"notes": false` und der Endpunkt antwortet mit 503 `llm_unavailable`.
 
 | Variable | Standard | Bedeutung |
 | --- | --- | --- |
 | `LLM_URL` | leer | Basis-URL des Chat-Servers, z. B. `http://127.0.0.1:8090`; der Adapter ruft `POST {LLM_URL}/v1/chat/completions` auf. Leer = Funktion aus |
 | `LLM_MODEL` | `local` | Wert für `model` im Request und Fallback für `model` in der Antwort (llama-server ignoriert ihn weitgehend) |
 | `LLM_API_KEY` | leer | Wird als `Authorization: Bearer …` an den LLM-Server geschickt |
-| `LLM_TIMEOUT_SECONDS` | `180` | Timeout je Protokoll-Anfrage |
-| `LLM_MAX_INPUT_CHARS` | `120000` | Längere Transkripte werden mit 413 `transcript_too_long` abgewiesen |
-| `LLM_MAX_OUTPUT_TOKENS` | `2048` | `max_tokens` im Request |
+| `LLM_TIMEOUT_SECONDS` | `180` | Timeout je LLM-Aufruf (eine lange Mitschrift braucht mehrere) |
+| `LLM_MAX_INPUT_CHARS` | `600000` | Längere Transkripte werden mit 413 `transcript_too_long` abgewiesen |
+| `LLM_CHUNK_CHARS` | `60000` | Ab dieser Länge wird in Teilen vorverdichtet; Teil plus Antwort müssen in den Kontext eines Slots passen (≈ 3,4 Zeichen je Token bei Qwen3 auf Deutsch) |
+| `LLM_MAX_OUTPUT_TOKENS` | `2048` | `max_tokens` für das Protokoll |
+| `LLM_SUMMARY_MAX_OUTPUT_TOKENS` | `4096` | `max_tokens` für die Zusammenfassung |
 | `LLM_TEMPERATURE` | `0.2` | `temperature` im Request |
 
 Der Prompt verlangt ein sachliches Protokoll nur aus dem Inhalt der Mitschrift (nichts erfinden, Sprechernamen übernehmen, Fehlendes als „nicht genannt“ kennzeichnen); `<think>`-Blöcke von Reasoning-Modellen werden aus der Antwort entfernt. Transkripte werden nicht protokolliert, Logs enthalten nur Zeichenzahlen und Latenz.

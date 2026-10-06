@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from . import __version__
 from .config import Settings, settings_from_env
-from .llm_client import NotesError, NotesWriter, OpenAIChatClient
+from .llm_client import NOTES_KINDS, NotesError, NotesWriter, OpenAIChatClient
 from .nemo_realtime import NemoHealthClient
 from .sessions import SessionError, SessionStore
 from .wav import WavError, parse_wav
@@ -54,6 +54,8 @@ def create_app(
             timeout_seconds=settings.llm_timeout_seconds,
             max_output_tokens=settings.llm_max_output_tokens,
             temperature=settings.llm_temperature,
+            summary_max_output_tokens=settings.llm_summary_max_output_tokens,
+            chunk_chars=settings.llm_chunk_chars,
         )
     if transcriber is None:
         if settings.asr_backend == "nemo":
@@ -124,6 +126,7 @@ def create_app(
             "language": settings.language_default,
             "diarization": settings.asr_backend == "nemo" and settings.nemo_speaker_diarization,
             "notes": notes_writer is not None,
+            "notesKinds": list(NOTES_KINDS) if notes_writer is not None else [],
         }
         return JSONResponse(status_code=200 if healthy else 503, content=body)
 
@@ -199,10 +202,19 @@ def create_app(
         if recorded_at is not None and not isinstance(recorded_at, str):
             raise ApiError(400, "invalid_request", "recordedAt muss ein String sein.")
 
+        kind = body.get("kind", "minutes")
+        if kind is None:
+            kind = "minutes"
+        if not isinstance(kind, str) or kind not in NOTES_KINDS:
+            raise ApiError(400, "invalid_kind", "kind muss minutes oder summary sein.")
+
         if notes_writer is None:
             raise NotesError("LLM_URL ist nicht konfiguriert")
-        result = await notes_writer.write_notes(transcript, language, title or None, recorded_at or None)
-        log.info("Protokoll erstellt: %d Zeichen Eingabe, %d Zeichen Ausgabe, %s ms", len(transcript), len(result.notes), result.latency_ms)
+        result = await notes_writer.write_notes(transcript, language, title or None, recorded_at or None, kind)
+        log.info(
+            "%s erstellt: %d Zeichen Eingabe in %d Teil(en), %d Zeichen Ausgabe, %s ms",
+            "Zusammenfassung" if kind == "summary" else "Protokoll", len(transcript), result.chunks, len(result.notes), result.latency_ms,
+        )
 
         diagnostics: dict[str, Any] = {}
         if result.latency_ms is not None:
@@ -211,7 +223,8 @@ def create_app(
             diagnostics["promptTokens"] = result.prompt_tokens
         if result.completion_tokens is not None:
             diagnostics["completionTokens"] = result.completion_tokens
-        return {"notes": result.notes, "model": result.model, "diagnostics": diagnostics}
+        diagnostics["chunks"] = result.chunks
+        return {"notes": result.notes, "kind": kind, "model": result.model, "diagnostics": diagnostics}
 
     return app
 
