@@ -20,8 +20,11 @@ public struct TranscriptDocument: Codable, Equatable, Sendable {
     /// Zeitpunkt der letzten Bearbeitung (Abschnitte entfernt oder korrigiert). Protokoll und
     /// Zusammenfassung, die älter sind, stammen noch aus der vorherigen Fassung.
     public var editedAt: Date?
+    /// Modell der genauen Nach-Transkription, falls die Mitschrift nicht mehr die Live-Fassung ist.
+    public var refinedModel: String?
 
-    public init(createdAt: Date, language: String, transcript: Transcript, incomplete: Bool = false, missingSegments: Int = 0, editedAt: Date? = nil) {
+    public init(createdAt: Date, language: String, transcript: Transcript, incomplete: Bool = false, missingSegments: Int = 0,
+                editedAt: Date? = nil, refinedModel: String? = nil) {
         version = Self.currentVersion
         self.createdAt = createdAt
         self.language = language
@@ -30,6 +33,7 @@ public struct TranscriptDocument: Codable, Equatable, Sendable {
         self.incomplete = incomplete
         self.missingSegments = missingSegments
         self.editedAt = editedAt
+        self.refinedModel = refinedModel
     }
 
     /// Die Mitschrift mit allen Abschnitten als final und den gespeicherten Namen.

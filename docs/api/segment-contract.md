@@ -45,7 +45,7 @@ Ohne Token erreichbar, liefert nur Betriebsdaten.
 }
 ```
 
-`diarization` sagt, ob der Server Sprecherlabels liefert (siehe `speaker` bei den Segmenten). `notes` sagt, ob der Protokoll-Assistent (`POST /v1/notes`) konfiguriert ist; das LLM selbst wird dafür nicht angefragt. `notesKinds` nennt die unterstützten Textarten (fehlt bei älteren Servern, dann nur `minutes`). `status` ist `ok`, `loading` (Modell wird noch geladen, HTTP 503) oder `degraded` (Modell geladen, aber `whisper-server` antwortet nicht, HTTP 503).
+`diarization` sagt, ob der Server Sprecherlabels liefert (siehe `speaker` bei den Segmenten). `notes` sagt, ob der Protokoll-Assistent (`POST /v1/notes`) konfiguriert ist; das LLM selbst wird dafür nicht angefragt. `notesKinds` nennt die unterstützten Textarten (fehlt bei älteren Servern, dann nur `minutes`). `refine` sagt, ob die genaue Nach-Transkription (`/v1/transcriptions`) eingerichtet ist, `refineModel` nennt ihr Modell. `status` ist `ok`, `loading` (Modell wird noch geladen, HTTP 503) oder `degraded` (Modell geladen, aber `whisper-server` antwortet nicht, HTTP 503).
 
 ### `POST /v1/live-transcriptions/segments`
 
@@ -179,6 +179,32 @@ Fehler:
 | 503 | `llm_unavailable` | Protokoll-Assistent nicht konfiguriert, LLM nicht erreichbar, Timeout, HTTP-Fehler oder unbrauchbare Antwort; `message` ist „Der Protokoll-Assistent ist gerade nicht verfügbar.“ |
 
 Der Adapter speichert weder Mitschrift noch Protokoll und protokolliert keine Inhalte; Fehlermeldungen enthalten nie Text aus der Mitschrift. Der Aufruf ist nicht idempotent: Zwei Aufrufe mit derselben Mitschrift können verschiedene Protokolle liefern.
+
+### `POST /v1/transcriptions` und `GET /v1/transcriptions/{id}`
+
+Genaue Nach-Transkription einer ganzen Aufnahme („Genau transkribieren“ in der App). Die Live-Mitschrift stammt vom schnellen Streaming-Modell; hier transkribiert der Adapter die Datei am Stück mit dem genaueren Modell des whisper-Dienstes (z. B. `large-v3`) und holt die Sprechertrennung vom NeMo-Dienst. Weil das bei langen Aufnahmen Minuten dauert, läuft es als Auftrag.
+
+`POST /v1/transcriptions`: Body ist die Audiodatei selbst (M4A/AAC, WAV, CAF, FLAC), `Content-Type: audio/*` oder `application/octet-stream`, optional `X-Mitschrift-Language` (`de`, `en`, `auto`; Standard: Serversprache). Antwort `202` mit dem Auftrag:
+
+```json
+{ "id": "6f1c…", "status": "queued", "model": "ggml-large-v3.bin", "elapsedSeconds": 0.0, "queuedSeconds": 0.0 }
+```
+
+`GET /v1/transcriptions/{id}` liefert denselben Auftrag mit aktuellem Stand. Die App fragt etwa alle 2 s.
+
+| Feld | Bedeutung |
+| --- | --- |
+| `status` | `queued` (wartet auf einen vorherigen Auftrag), `running`, `done`, `failed` |
+| `phase` | nur bei `running`: `decoding`, `transcribing`, `diarizing` |
+| `durationSeconds` | Länge der Aufnahme, sobald dekodiert |
+| `elapsedSeconds` | Rechenzeit bisher |
+| `segments` | nur bei `done`: Abschnitte wie bei den Live-Antworten (`start`, `end`, `text`, `speaker`), etwa satzweise; `speaker` ist `"1"`, `"2"`, … in Reihenfolge des ersten Auftretens oder `null` ohne Sprechertrennung |
+| `diarization` | nur bei `done`: ob Sprecherlabels enthalten sind (fällt die Sprechertrennung aus, kommt der Text trotzdem) |
+| `message` | nur bei `failed`: Grund ohne Inhalte der Aufnahme |
+
+Aufträge laufen nacheinander und verfallen eine Stunde nach dem Abschluss. Der Adapter speichert weder Audio noch Text; nach einem Neustart sind laufende Aufträge verloren (`GET` → 404). Abschnitte, in denen Whisper unsicher ist und die Sprechertrennung keine Sprache gehört hat, verwirft der Adapter als mutmaßliche Halluzination.
+
+Fehler beim Anlegen: 400 `invalid_content_type`, `invalid_language`, `invalid_audio` (leer); 401; 413 `payload_too_large` (über `REFINE_MAX_BYTES`, Startwert 300 MB); 429 `too_many_jobs`; 503 `refine_unavailable`. `GET` auf eine unbekannte oder abgelaufene ID: 404 `unknown_job`. Ältere Adapter ohne diesen Endpunkt antworten mit 404; die App überträgt dann wie bisher über die Segment-Schnittstelle nach.
 
 ## Finalisierungsregel
 

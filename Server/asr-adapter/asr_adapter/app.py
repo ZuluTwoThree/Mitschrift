@@ -12,7 +12,8 @@ from fastapi.responses import JSONResponse
 from . import __version__
 from .config import Settings, settings_from_env
 from .llm_client import NOTES_KINDS, NotesError, NotesWriter, OpenAIChatClient
-from .nemo_realtime import NemoHealthClient
+from .nemo_realtime import NemoHealthClient, http_base_url
+from .refine import NemoDiarizer, RefineError, RefineJobs, WhisperFileClient
 from .sessions import SessionError, SessionStore
 from .wav import WavError, parse_wav
 from .whisper_client import Transcriber, TranscriberError, WhisperServerClient
@@ -44,6 +45,7 @@ def create_app(
     transcriber: Transcriber | None = None,
     nemo_factory: Callable[[], Any] | None = None,
     notes_writer: NotesWriter | None = None,
+    refine_jobs: RefineJobs | None = None,
 ) -> FastAPI:
     settings = settings or settings_from_env()
     if notes_writer is None and settings.llm_url:
@@ -63,6 +65,15 @@ def create_app(
         else:
             transcriber = WhisperServerClient(settings.whisper_url, settings.whisper_timeout_seconds)
     store = SessionStore(settings, transcriber, nemo_factory=nemo_factory)
+    if refine_jobs is None and settings.refine_enabled:
+        diarizer = None
+        if settings.asr_backend == "nemo" and settings.nemo_speaker_diarization:
+            diarizer = NemoDiarizer(http_base_url(settings.nemo_url), settings.nemo_api_key, settings.refine_timeout_seconds)
+        refine_jobs = RefineJobs(
+            WhisperFileClient(settings.refine_whisper_url or settings.whisper_url, settings.refine_timeout_seconds),
+            diarizer,
+            settings.refine_model_name,
+        )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -74,6 +85,8 @@ def create_app(
             await transcriber.aclose()
             if notes_writer is not None:
                 await notes_writer.aclose()
+            if refine_jobs is not None:
+                await refine_jobs.aclose()
 
     app = FastAPI(title="Mitschrift ASR-Adapter", version=__version__, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.store = store
@@ -127,7 +140,10 @@ def create_app(
             "diarization": settings.asr_backend == "nemo" and settings.nemo_speaker_diarization,
             "notes": notes_writer is not None,
             "notesKinds": list(NOTES_KINDS) if notes_writer is not None else [],
+            "refine": refine_jobs is not None,
         }
+        if refine_jobs is not None:
+            body["refineModel"] = refine_jobs.model_name
         return JSONResponse(status_code=200 if healthy else 503, content=body)
 
     @app.post("/v1/live-transcriptions/segments")
@@ -225,6 +241,42 @@ def create_app(
             diagnostics["completionTokens"] = result.completion_tokens
         diagnostics["chunks"] = result.chunks
         return {"notes": result.notes, "kind": kind, "model": result.model, "diagnostics": diagnostics}
+
+    @app.post("/v1/transcriptions", status_code=202)
+    async def post_transcription(request: Request) -> dict[str, Any]:
+        require_token(request)
+        if refine_jobs is None:
+            raise ApiError(503, "refine_unavailable", "Die genaue Transkription ist auf diesem Server nicht eingerichtet.")
+        content_length = request.headers.get("content-length")
+        if content_length is not None and content_length.isdigit() and int(content_length) > settings.refine_max_bytes:
+            raise ApiError(413, "payload_too_large", "Die Audiodatei ist zu groß.")
+        content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+        if content_type and not (content_type.startswith("audio/") or content_type == "application/octet-stream"):
+            raise ApiError(400, "invalid_content_type", "Erwartet eine Audiodatei (audio/*).")
+        language = (request.headers.get(HEADER_LANGUAGE) or settings.language_default).strip().lower()
+        if language not in LANGUAGES:
+            raise ApiError(400, "invalid_language", "Sprache muss de, en oder auto sein.")
+        data = bytearray()
+        async for chunk in request.stream():
+            data.extend(chunk)
+            if len(data) > settings.refine_max_bytes:
+                raise ApiError(413, "payload_too_large", "Die Audiodatei ist zu groß.")
+        if not data:
+            raise ApiError(400, "invalid_audio", "Leere Audiodatei.")
+        try:
+            job = refine_jobs.submit(bytes(data), language)
+        except RefineError as error:
+            raise ApiError(429, "too_many_jobs", str(error)) from None
+        log.info("Nach-Transkription angenommen: %d Bytes, Sprache %s", len(data), language)
+        return job.to_json(refine_jobs.model_name)
+
+    @app.get("/v1/transcriptions/{job_id}")
+    async def get_transcription(job_id: str, request: Request) -> dict[str, Any]:
+        require_token(request)
+        job = refine_jobs.get(job_id) if refine_jobs is not None else None
+        if job is None:
+            raise ApiError(404, "unknown_job", "Unbekannter oder abgelaufener Auftrag.")
+        return job.to_json(refine_jobs.model_name)
 
     return app
 

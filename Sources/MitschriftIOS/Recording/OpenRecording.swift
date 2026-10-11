@@ -12,6 +12,14 @@ final class OpenRecording: ObservableObject {
         case transcribing(progress: Double)
         case writing(NotesKind)
         case editing
+        /// Genaue Nach-Transkription: erst Upload, dann Warten auf den Server.
+        case refining(RefineStage)
+    }
+
+    enum RefineStage: Equatable {
+        case uploading(Double)
+        case queued
+        case processing(phase: String?, elapsed: Double)
     }
 
     @Published private(set) var item: RecordingItem
@@ -28,6 +36,8 @@ final class OpenRecording: ObservableObject {
     @Published private(set) var outdated: Set<NotesKind> = []
     /// Die Audiodatei wird gerade komprimiert und darf nicht verändert werden.
     @Published var audioLocked = false
+    /// Modell der genauen Nach-Transkription, wenn die Mitschrift nicht mehr die Live-Fassung ist.
+    @Published private(set) var refinedModel: String?
 
     let language: String
     /// Letzte Bearbeitung der Mitschrift, wird im Dokument mitgespeichert.
@@ -41,7 +51,7 @@ final class OpenRecording: ObservableObject {
 
     /// Aus einer frisch beendeten Aufnahme.
     init(item: RecordingItem, transcript: Transcript, language: String, incomplete: Bool, missingSegments: Int,
-         editedAt: Date? = nil, library: RecordingLibrary?) {
+         editedAt: Date? = nil, refinedModel: String? = nil, library: RecordingLibrary?) {
         self.item = item
         self.transcript = transcript
         self.language = language
@@ -49,6 +59,7 @@ final class OpenRecording: ObservableObject {
         self.missingSegments = missingSegments
         self.library = library
         self.editedAt = editedAt
+        self.refinedModel = refinedModel
         for kind in NotesKind.allCases {
             guard let url = item.url(for: kind) else { continue }
             texts[kind] = try? String(contentsOf: url, encoding: .utf8)
@@ -67,7 +78,7 @@ final class OpenRecording: ObservableObject {
         let transcript = document?.transcript ?? library?.loadTranscript(for: item) ?? Transcript()
         self.init(item: item, transcript: transcript, language: document?.language ?? language,
                   incomplete: document?.incomplete ?? false, missingSegments: document?.missingSegments ?? 0,
-                  editedAt: document?.editedAt, library: library)
+                  editedAt: document?.editedAt, refinedModel: document?.refinedModel, library: library)
     }
 
     private func observeFileTask() {
@@ -112,7 +123,99 @@ final class OpenRecording: ObservableObject {
         transcript = updated
         incomplete = false
         missingSegments = 0
+        editedAt = Date()
+        outdated.formUnion(texts.keys)
         saveTranscript()
+    }
+
+    // MARK: Genau transkribieren
+
+    /// Lädt die Aufnahme hoch und lässt sie auf dem Server mit dem genaueren Modell am Stück transkribieren.
+    /// Kennt der Server das noch nicht, wird wie bisher über die Live-Schnittstelle nachträglich übertragen.
+    func refine(endpoint: ServerEndpoint, transport: RefineTransport? = nil, pollInterval: Duration = .seconds(2)) async {
+        guard !isBusy, !audioLocked else { return }
+        error = nil
+        activity = .refining(.uploading(0))
+        let transport = transport ?? URLSessionLiveTransport(endpoint: endpoint)
+        let language = self.language
+        var job: RefineJob
+        do {
+            job = try await transport.startRefine(audioFile: item.audioURL, language: language) { [weak self] fraction in
+                Task { @MainActor in
+                    guard let self, case .refining(.uploading) = self.activity else { return }
+                    self.activity = .refining(.uploading(fraction))
+                }
+            }
+        } catch LiveTranscriptionError.sessionNotFound {
+            // 404: älterer Adapter ohne /v1/transcriptions.
+            activity = nil
+            await retranscribe(endpoint: endpoint)
+            return
+        } catch let error as LiveTranscriptionError {
+            activity = nil
+            self.error = Self.explainRefine(error)
+            return
+        } catch {
+            activity = nil
+            self.error = error.localizedDescription
+            return
+        }
+
+        var failures = 0
+        while !job.isFinished {
+            activity = job.status == "queued" ? .refining(.queued) : .refining(.processing(phase: job.phase, elapsed: job.elapsedSeconds ?? 0))
+            try? await Task.sleep(for: pollInterval)
+            do {
+                job = try await transport.refineStatus(id: job.id)
+                failures = 0
+            } catch LiveTranscriptionError.sessionNotFound {
+                activity = nil
+                error = "Der Auftrag ist auf dem Server nicht mehr bekannt, vermutlich wurde der Adapter neu gestartet. Bitte noch einmal versuchen."
+                return
+            } catch {
+                // Kurze Netzaussetzer überbrücken, der Server rechnet weiter.
+                failures += 1
+                if failures >= 15 {
+                    activity = nil
+                    self.error = "Die Verbindung zum Server ist abgerissen. Die genaue Transkription läuft dort eventuell weiter; bitte später noch einmal versuchen."
+                    return
+                }
+            }
+        }
+        activity = nil
+        guard job.status == "done", let segments = job.segments else {
+            error = job.message.map { "Die genaue Transkription ist fehlgeschlagen: \($0)" } ?? "Die genaue Transkription ist fehlgeschlagen."
+            return
+        }
+        apply(refined: segments, model: job.model ?? "unbekannt")
+    }
+
+    /// Übernimmt die genaue Fassung: Sprecherlabels passend zur bisherigen Mitschrift, damit Namen bleiben.
+    func apply(refined segments: [Segment], model: String) {
+        let relabeled = SpeakerMatching.relabel(segments, toMatch: transcript.finalSegments)
+        let remaining = Set(relabeled.compactMap(\.speaker))
+        transcript = Transcript(finalSegments: relabeled, speakerNames: transcript.speakerNames.filter { remaining.contains($0.key) })
+        incomplete = false
+        missingSegments = 0
+        refinedModel = model
+        editedAt = Date()
+        outdated.formUnion(texts.keys)
+        saveTranscript()
+    }
+
+    private static func explainRefine(_ error: LiveTranscriptionError) -> String {
+        switch error {
+        case .unavailable:
+            return "Die genaue Transkription ist auf dem Server nicht eingerichtet oder gerade nicht verfügbar."
+        case .payloadTooLarge:
+            return "Die Aufnahme ist zu groß für die genaue Transkription."
+        case .overloaded:
+            return "Auf dem Server warten schon zu viele Aufträge. Bitte später noch einmal versuchen."
+        case .transport:
+            return "Server nicht erreichbar. Ist Tailscale auf dem iPhone verbunden?"
+        default:
+            return error.userMessage
+        }
     }
 
     // MARK: Mitschrift bearbeiten
@@ -252,7 +355,7 @@ final class OpenRecording: ObservableObject {
     private func saveTranscript() {
         guard let library else { return }
         let document = TranscriptDocument(createdAt: createdAt, language: language, transcript: transcript, incomplete: incomplete,
-                                          missingSegments: missingSegments, editedAt: editedAt)
+                                          missingSegments: missingSegments, editedAt: editedAt, refinedModel: refinedModel)
         do {
             let urls = try library.save(document, forAudio: item.audioURL)
             item.transcriptDocumentURL = urls.document

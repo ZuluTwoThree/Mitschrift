@@ -108,6 +108,21 @@ Nummer „20112“. Mit den Regeln „nur echte Fragen anderer Personen“, „n
 („dann verschieben wir den Termin auf Freitag“ – „Einverstanden“) weiterhin nicht zuverlässig als Entscheidung;
 erfundene Aufgaben bleiben aber aus, auch die offene Frage „Wer kümmert sich um …?“ landet unter offenen Punkten.
 
+## Genau transkribieren (ganze Datei nach dem Stopp), 2026-10-11
+
+Offline über die ganze Datei, RTX 3090. Ohne handkorrigierte Referenz; verglichen wird gegen die bekannten Fehler der Live-Fassung.
+
+| Modell | G137 (Talkrunde, 4 Sprechende) | V48 (Video, Musik) | Rechenzeit G137 |
+| --- | --- | --- | --- |
+| Nemotron 3.5 offline (Live-Modell) | „ins Spannen“ statt „Jens Spahn“, „Es führt“ | „Aber drei Uhr 50 Gigabyte“, „fünf, neun GB“ | 3 s |
+| Parakeet TDT 0.6B v3 | kippt ins Englische („Yeah, we have the form, we have the thema“), erster Satz fehlt | gut, „5,9 GB“, „61,7 gegen 53,4“ | 2 s |
+| whisper `large-v3-turbo` | fast fehlerfrei | fast fehlerfrei, „QN 3.8“ | 5 s |
+| whisper `large-v3` (gewählt) | praktisch fehlerfrei: „Jens Spahn“, „Herr Neubacher“, „Janosch Dahmen“, „christlich-demokratische Volkspartei“ | fast fehlerfrei, „Qendry 3.8“ | 9 s |
+
+Parakeet scheidet wegen der Sprachdrift bei mehreren Sprechenden aus. Gewählt ist `large-v3`, weil es bei Akzenten und Dialekten als robuster gilt als turbo; eine eigene Dialektaufnahme zum Messen fehlt noch.
+
+Über den Adapter (`/v1/transcriptions`, M4A-Upload, Sprechertrennung über NeMo `/v1/audio/diarizations`): G137 in 8 s Rechenzeit mit vier Sprechenden; eine Stunde (G137 26-mal hintereinander) in 4 min 50 s, 572 Abschnitte, Adapter 310 MB RAM. Ohne `-mc 0` geriet `large-v3` nach vier Minuten in eine Schleife („Und das war ein sehr guter Satz.“ bis zum Ende); mit `-mc 0` und dem Wiederholungsfilter ist sie weg. Die Sprecherzuordnung liegt an Wechseln gelegentlich ein Wort daneben (Grenzen der Sprechertrennung schwanken um etwa 0,5 s). Zwei synthetische Stimmen (Sprachausgabe „Anna“/„Markus“) hielt die Sprechertrennung offline für eine.
+
 ## Aufnahmeformat AAC statt WAV
 
 Siehe `docs/planning/audioformat.md`: G137 nach AAC 48 kbit/s und zurück ergibt 16,2 % WER statt 15,9 % (32 kbit/s: 16,8 %), bei einem Fünftel der Dateigröße. Zwei Replays desselben Originals sind identisch (0,0 %).
