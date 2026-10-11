@@ -9,6 +9,7 @@ struct RecordingPanel: View {
     @EnvironmentObject private var settings: SettingsStore
     @State private var showSpeakers = false
     @State private var showEditor = false
+    @State private var confirmRefine = false
     @State private var notesSheet: NotesKind?
 
     var body: some View {
@@ -23,6 +24,11 @@ struct RecordingPanel: View {
                     .font(Theme.Fonts.footnote)
                     .foregroundStyle(Theme.amber)
             }
+            if let model = recording.refinedModel, recording.activity == nil {
+                Text("Genaue Fassung, transkribiert mit \(RefineJob.displayName(forModel: model)).")
+                    .font(Theme.Fonts.footnote)
+                    .foregroundStyle(Theme.mist)
+            }
             if let outdatedText {
                 Text(outdatedText)
                     .font(Theme.Fonts.footnote)
@@ -36,12 +42,14 @@ struct RecordingPanel: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    if settings.isConfigured, recording.canRetranscribe {
-                        Button("Nachträglich transkribieren") {
-                            guard let endpoint = settings.endpoint else { return }
-                            Task { await recording.retranscribe(endpoint: endpoint) }
+                    if settings.isConfigured, recording.refinedModel == nil || recording.canRetranscribe {
+                        Button {
+                            if recording.transcript.isEmpty { refine() } else { confirmRefine = true }
+                        } label: {
+                            Label("Genau transkribieren", systemImage: "waveform.badge.magnifyingglass")
                         }
-                        .buttonStyle(PaperButtonStyle(prominent: true))
+                        .buttonStyle(PaperButtonStyle(prominent: recording.canRetranscribe))
+                        .disabled(recording.audioLocked)
                     }
                     if !recording.transcript.isEmpty {
                         Button {
@@ -70,6 +78,15 @@ struct RecordingPanel: View {
             .disabled(recording.isBusy)
             .opacity(recording.isBusy ? 0.5 : 1)
         }
+        .confirmationDialog(refineQuestion, isPresented: $confirmRefine, titleVisibility: .visible) {
+            Button("Genau transkribieren", action: refine)
+            Button("Abbrechen", role: .cancel) {}
+        }
+        .onChange(of: recording.isBusy) { _, busy in
+            // Upload und Rechnen auf dem Server dauern bei langen Aufnahmen Minuten; die Sperre würde
+            // die App anhalten und den Auftrag abreißen lassen.
+            UIApplication.shared.isIdleTimerDisabled = busy
+        }
         .sheet(isPresented: $showSpeakers) {
             SpeakerNamesSheet(recording: recording)
         }
@@ -94,6 +111,20 @@ struct RecordingPanel: View {
             if let flag = environment["MITSCHRIFT_DEV_SHOW_EDITOR"], !flag.isEmpty, !recording.transcript.isEmpty { showEditor = true }
             #endif
         }
+    }
+
+    private func refine() {
+        guard let endpoint = settings.endpoint else { return }
+        Task { await recording.refine(endpoint: endpoint) }
+    }
+
+    private var refineQuestion: String {
+        var text = "Der Server transkribiert die ganze Aufnahme noch einmal mit einem genaueren Modell, das auch Dialekte und Namen besser erkennt. Die Mitschrift wird dann ersetzt."
+        if !recording.texts.isEmpty {
+            text += " Vorhandene Protokolle und Zusammenfassungen lassen sich danach neu erstellen."
+        }
+        text += " Eigene Textkorrekturen gehen verloren; nur aus der Audiodatei entfernte Stellen bleiben entfernt."
+        return text
     }
 
     private func notesButton(_ kind: NotesKind) -> some View {
@@ -152,6 +183,8 @@ struct RecordingPanel: View {
                     .font(Theme.Fonts.footnote)
                     .foregroundStyle(Theme.mist)
             }
+        case .refining(let stage):
+            refiningLine(stage)
         case .editing:
             HStack(spacing: 8) {
                 ProgressView().tint(Theme.mint)
@@ -161,6 +194,41 @@ struct RecordingPanel: View {
             }
         case nil:
             EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private func refiningLine(_ stage: OpenRecording.RefineStage) -> some View {
+        switch stage {
+        case .uploading(let fraction):
+            ProgressView(value: fraction) {
+                Text("Aufnahme wird zum Server hochgeladen")
+                    .font(Theme.Fonts.footnote)
+                    .foregroundStyle(Theme.mist)
+            }
+            .tint(Theme.mint)
+        case .queued:
+            HStack(spacing: 8) {
+                ProgressView().tint(Theme.mint)
+                Text("Wartet auf dem Server, bis ein anderer Auftrag fertig ist …")
+                    .font(Theme.Fonts.footnote)
+                    .foregroundStyle(Theme.mist)
+            }
+        case .processing(let phase, let elapsed):
+            HStack(spacing: 8) {
+                ProgressView().tint(Theme.mint)
+                Text("\(Self.phaseText(phase)) (\(RecordingNaming.elapsedText(elapsed)))")
+                    .font(Theme.Fonts.footnote.monospacedDigit())
+                    .foregroundStyle(Theme.mist)
+            }
+        }
+    }
+
+    private static func phaseText(_ phase: String?) -> String {
+        switch phase {
+        case "decoding": return "Der Server bereitet die Aufnahme vor"
+        case "diarizing": return "Der Server ordnet die Sprecher zu"
+        default: return "Der Server transkribiert genau"
         }
     }
 

@@ -83,6 +83,9 @@ public struct HealthResponse: Codable, Equatable, Sendable {
     public var diarization: Bool?
     /// Der Protokoll-Assistent (`POST /v1/notes`) ist auf dem Server eingerichtet.
     public var notes: Bool?
+    /// Genaue Nach-Transkription ganzer Aufnahmen (`POST /v1/transcriptions`) und ihr Modell.
+    public var refine: Bool?
+    public var refineModel: String?
 
     public var isHealthy: Bool { status == "ok" }
 }
@@ -149,5 +152,46 @@ public struct NotesDiagnostics: Codable, Equatable, Sendable {
         self.promptTokens = promptTokens
         self.completionTokens = completionTokens
         self.chunks = chunks
+    }
+}
+
+
+/// Ein Auftrag zur genauen Nach-Transkription (`POST /v1/transcriptions`, `GET /v1/transcriptions/{id}`).
+public struct RefineJob: Codable, Equatable, Sendable {
+    public var id: String
+    /// `queued`, `running`, `done` oder `failed`
+    public var status: String
+    /// Während `running`: `decoding`, `transcribing` oder `diarizing`
+    public var phase: String?
+    public var model: String?
+    public var durationSeconds: Double?
+    public var elapsedSeconds: Double?
+    /// Nur bei `done`: die neue Mitschrift, Sprecherlabels „1“, „2“, … oder ohne Label.
+    public var segments: [Segment]?
+    public var diarization: Bool?
+    /// Nur bei `failed`: Grund ohne Inhalte der Aufnahme.
+    public var message: String?
+
+    public init(id: String, status: String, phase: String? = nil, model: String? = nil, durationSeconds: Double? = nil,
+                elapsedSeconds: Double? = nil, segments: [Segment]? = nil, diarization: Bool? = nil, message: String? = nil) {
+        self.id = id
+        self.status = status
+        self.phase = phase
+        self.model = model
+        self.durationSeconds = durationSeconds
+        self.elapsedSeconds = elapsedSeconds
+        self.segments = segments
+        self.diarization = diarization
+        self.message = message
+    }
+
+    public var isFinished: Bool { status == "done" || status == "failed" }
+
+    /// Lesbarer Modellname: `ggml-large-v3.bin` → `large-v3`.
+    public static func displayName(forModel model: String) -> String {
+        var name = model
+        if name.hasSuffix(".bin") || name.hasSuffix(".gguf") { name = (name as NSString).deletingPathExtension }
+        if name.hasPrefix("ggml-") { name.removeFirst(5) }
+        return name
     }
 }

@@ -69,6 +69,16 @@ class Settings:
     llm_chunk_chars: int = 60_000
     llm_temperature: float = 0.2
 
+    # Genaue Nach-Transkription ganzer Aufnahmen über whisper-server (POST /v1/transcriptions)
+    refine_enabled: bool = True
+    #: whisper-server für die Nach-Transkription; leer = WHISPER_URL
+    refine_whisper_url: str = ""
+    #: Anzeigename des Modells, z. B. ggml-large-v3.bin
+    refine_model_name: str = "whisper"
+    refine_timeout_seconds: float = 1800.0
+    #: Größte Audiodatei (M4A mit 48 kbit/s: rund 22 MB je Stunde)
+    refine_max_bytes: int = 300 * 1024 * 1024
+
 
 def _env_float(name: str, default: float) -> float:
     raw = os.environ.get(name)
@@ -129,4 +139,9 @@ def settings_from_env() -> Settings:
         llm_summary_max_output_tokens=_env_int("LLM_SUMMARY_MAX_OUTPUT_TOKENS", 4096),
         llm_chunk_chars=_env_int("LLM_CHUNK_CHARS", 60_000),
         llm_temperature=_env_float("LLM_TEMPERATURE", 0.2),
+        refine_enabled=_env_bool("REFINE_ENABLED", True),
+        refine_whisper_url=os.environ.get("REFINE_WHISPER_URL", "").strip().rstrip("/"),
+        refine_model_name=os.path.basename(os.environ.get("REFINE_MODEL", "") or os.environ.get("WHISPER_MODEL", "")) or "whisper",
+        refine_timeout_seconds=_env_float("REFINE_TIMEOUT_SECONDS", 1800.0),
+        refine_max_bytes=_env_int("REFINE_MAX_BYTES", 300 * 1024 * 1024),
     )

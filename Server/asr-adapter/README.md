@@ -158,3 +158,17 @@ Wortfehlerrate der Live-Transkription gegenüber `whisper-cli` offline mit demse
 
 Mittlere Latenz pro Fenster rund 600 ms (Standard) bzw. 700 ms (`-sns -bs 5`). Ein Whisper-Prompt aus dem finalen Text (`PROMPT_MAX_CHARS`) verschlechterte das Ergebnis und ist aus. `large-v3-turbo` (q5_0) wurde offline mit Echtzeitfaktor 0,68 gemessen; der Live-Vergleich steht aus, weil der 8-GB-Mac dafür nicht reicht.
 
+## Genau transkribieren (`/v1/transcriptions`)
+
+Ganze Aufnahmen nach dem Stopp: Die App lädt die Datei hoch, der Adapter dekodiert sie (PyAV), schickt sie an `whisper-server` (`/inference`, `verbose_json` mit Wortzeiten) und holt Sprechersegmente von `nemo-speech serve` (`/v1/audio/diarizations`, Streaming-Modus). Jedes Whisper-Wort bekommt den Sprecher der überlappenden Spanne; Abschnitte entstehen satzweise, kurze Sprecherwechsel innerhalb eines Satzes werden geglättet. Gemessen auf der RTX 3090 mit `large-v3`: G137 (137 s, vier Sprechende) in 9 s, praktisch fehlerfrei bei Namen und Zahlen.
+
+| Variable | Standard | Bedeutung |
+| --- | --- | --- |
+| `REFINE_ENABLED` | `true` | Funktion an/aus |
+| `REFINE_WHISPER_URL` | `WHISPER_URL` | whisper-server für die Nach-Transkription |
+| `REFINE_MODEL` | `WHISPER_MODEL` | Anzeigename des Modells in Health und Antwort |
+| `REFINE_TIMEOUT_SECONDS` | `1800` | Timeout je Aufruf an whisper-server und NeMo |
+| `REFINE_MAX_BYTES` | `314572800` | Größte Audiodatei |
+
+Die Sprechertrennung nutzt den NeMo-Dienst nur bei `ASR_BACKEND=nemo` und `NEMO_SPEAKER_DIARIZATION=true`; sonst kommt der Text ohne Sprecher.
+

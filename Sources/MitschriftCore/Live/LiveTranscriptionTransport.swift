@@ -12,8 +12,15 @@ public protocol NotesTransport: Sendable {
     func notes(_ request: NotesRequest) async throws -> NotesResponse
 }
 
+/// Genaue Nach-Transkription einer ganzen Aufnahme (`/v1/transcriptions`).
+public protocol RefineTransport: Sendable {
+    /// Lädt die Audiodatei hoch und legt einen Auftrag an; `progress` meldet den Upload (0…1).
+    func startRefine(audioFile: URL, language: String, progress: (@Sendable (Double) -> Void)?) async throws -> RefineJob
+    func refineStatus(id: String) async throws -> RefineJob
+}
+
 /// Umsetzung des Vertrags mit `URLSession`.
-public final class URLSessionLiveTransport: LiveTranscriptionTransport, NotesTransport, @unchecked Sendable {
+public final class URLSessionLiveTransport: LiveTranscriptionTransport, NotesTransport, RefineTransport, @unchecked Sendable {
     public static let clientHeaderValue = "mitschrift/\(coreVersion)"
     public static let coreVersion = "0.1.0"
 
@@ -63,6 +70,39 @@ public final class URLSessionLiveTransport: LiveTranscriptionTransport, NotesTra
         return try await perform(request, session: longSession)
     }
 
+    public func startRefine(audioFile: URL, language: String, progress: (@Sendable (Double) -> Void)?) async throws -> RefineJob {
+        var request = URLRequest(url: endpoint.baseURL.appendingPathComponent("v1/transcriptions"))
+        request.httpMethod = "POST"
+        request.setValue(Self.contentType(for: audioFile), forHTTPHeaderField: "Content-Type")
+        request.setValue(language, forHTTPHeaderField: "X-Mitschrift-Language")
+        applyCommonHeaders(&request)
+        let delegate = UploadProgressDelegate(progress: progress)
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await longSession.upload(for: request, fromFile: audioFile, delegate: delegate)
+        } catch {
+            throw LiveTranscriptionError.transport(error.localizedDescription)
+        }
+        return try decode(data, response)
+    }
+
+    public func refineStatus(id: String) async throws -> RefineJob {
+        var request = URLRequest(url: endpoint.baseURL.appendingPathComponent("v1/transcriptions/\(id)"))
+        request.httpMethod = "GET"
+        applyCommonHeaders(&request)
+        return try await perform(request)
+    }
+
+    static func contentType(for file: URL) -> String {
+        switch file.pathExtension.lowercased() {
+        case "m4a", "mp4": return "audio/mp4"
+        case "wav": return "audio/wav"
+        case "caf": return "audio/x-caf"
+        case "flac": return "audio/flac"
+        default: return "application/octet-stream"
+        }
+    }
+
     /// Eigene Session für langlaufende Anfragen: Der Leerlauf-Timeout der Standard-Session (15 s) gilt
     /// hier nicht, weil das LLM ohne Streaming erst am Ende antwortet.
     private lazy var longSession: URLSession = {
@@ -99,6 +139,10 @@ public final class URLSessionLiveTransport: LiveTranscriptionTransport, NotesTra
 
     private func perform<T: Decodable>(_ request: URLRequest, session: URLSession? = nil) async throws -> T {
         let (data, response) = try await data(for: request, session: session ?? self.session)
+        return try decode(data, response)
+    }
+
+    private func decode<T: Decodable>(_ data: Data, _ response: URLResponse) throws -> T {
         guard let http = response as? HTTPURLResponse else { throw LiveTranscriptionError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             throw LiveTranscriptionError(status: http.statusCode, body: try? decoder.decode(APIErrorBody.self, from: data))
@@ -116,5 +160,21 @@ public final class URLSessionLiveTransport: LiveTranscriptionTransport, NotesTra
         } catch {
             throw LiveTranscriptionError.transport(error.localizedDescription)
         }
+    }
+}
+
+
+/// Meldet den Fortschritt eines Uploads an einen Callback.
+private final class UploadProgressDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    let progress: (@Sendable (Double) -> Void)?
+
+    init(progress: (@Sendable (Double) -> Void)?) {
+        self.progress = progress
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64,
+                    totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        guard totalBytesExpectedToSend > 0 else { return }
+        progress?(Double(totalBytesSent) / Double(totalBytesExpectedToSend))
     }
 }

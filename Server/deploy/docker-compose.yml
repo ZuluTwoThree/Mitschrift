@@ -93,6 +93,12 @@ services:
       LLM_CHUNK_CHARS: ${LLM_CHUNK_CHARS:-60000}
       LLM_MAX_INPUT_CHARS: ${LLM_MAX_INPUT_CHARS:-600000}
       LLM_SUMMARY_MAX_OUTPUT_TOKENS: ${LLM_SUMMARY_MAX_OUTPUT_TOKENS:-4096}
+      # Genau transkribieren (POST /v1/transcriptions): ganze Aufnahme über den whisper-Dienst, Sprecher vom
+      # NeMo-Dienst (/v1/audio/diarizations). Das Modell ist WHISPER_MODEL; für Dialekte und Namen
+      # empfiehlt sich ggml-large-v3.bin (rund 4 GB VRAM).
+      REFINE_ENABLED: ${REFINE_ENABLED:-true}
+      REFINE_MODEL: ${WHISPER_MODEL:-ggml-large-v3-turbo-q5_0.bin}
+      REFINE_TIMEOUT_SECONDS: ${REFINE_TIMEOUT_SECONDS:-1800}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
