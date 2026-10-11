@@ -160,7 +160,7 @@ Mittlere Latenz pro Fenster rund 600 ms (Standard) bzw. 700 ms (`-sns -bs 5`). E
 
 ## Genau transkribieren (`/v1/transcriptions`)
 
-Ganze Aufnahmen nach dem Stopp: Die App lädt die Datei hoch, der Adapter dekodiert sie (PyAV), schickt sie an `whisper-server` (`/inference`, `verbose_json` mit Wortzeiten) und holt Sprechersegmente von `nemo-speech serve` (`/v1/audio/diarizations`, Streaming-Modus). Jedes Whisper-Wort bekommt den Sprecher der überlappenden Spanne; Abschnitte entstehen satzweise, kurze Sprecherwechsel innerhalb eines Satzes werden geglättet. Gemessen auf der RTX 3090 mit `large-v3`: G137 (137 s, vier Sprechende) in 9 s, praktisch fehlerfrei bei Namen und Zahlen.
+Ganze Aufnahmen nach dem Stopp: Die App lädt die Datei hoch, der Adapter dekodiert sie (PyAV), schickt sie an `whisper-server` (`/inference`, `verbose_json` mit Wortzeiten) und holt Sprechersegmente von `nemo-speech serve` (`/v1/audio/diarizations`, Streaming-Modus). Jedes Whisper-Wort bekommt den Sprecher der überlappenden Spanne; Abschnitte entstehen satzweise, kurze Sprecherwechsel innerhalb eines Satzes werden geglättet. Gemessen auf der RTX 3090 mit `large-v3` (4,3 GB VRAM): G137 (137 s, vier Sprechende) in 8 s, praktisch fehlerfrei bei Namen und Zahlen; eine Stunde in 4 min 50 s. `whisper-server` muss mit `-mc 0` laufen (Voreinstellung in `docker-compose.yml`), sonst gerät es bei langen Dateien in Wiederholungsschleifen.
 
 | Variable | Standard | Bedeutung |
 | --- | --- | --- |

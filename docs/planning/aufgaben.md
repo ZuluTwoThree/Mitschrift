@@ -142,3 +142,11 @@ Zum Prüfen auf dem iPhone:
 - [ ] „Zusammenfassung erstellen“ bei einer Schulung oder einem Vortrag. Erwartung: Überblick, Kernaussagen, Inhalte nach Themen, Fragen und Antworten (nur echte Fragen), Hinweise. In der Liste erscheint die Marke „Zusammenfassung“ und öffnet sie direkt.
 - [ ] Nach dem Kürzen einer Aufnahme mit vorhandenem Protokoll steht ein gelber Hinweis, dass es aus der alten Fassung stammt; „Neu erstellen“ im Menü des Protokolls aktualisiert es.
 
+## Stand 2026-10-11: Genau transkribieren
+
+„Nachträglich transkribieren“ heißt jetzt „Genau transkribieren“: Die App lädt die Aufnahme hoch, der Server transkribiert sie am Stück mit Whisper large-v3 und ordnet die Sprecher über NeMo zu. Vergebene Sprechernamen bleiben beim passenden Sprecher. Auf kiworkstation laufen dafür `WHISPER_MODEL=ggml-large-v3.bin` und `WHISPER_ARGS=-sns -bs 5 -mc 0` (rund 4,3 GB VRAM).
+
+- [ ] Eine Aufnahme mit Dialekt oder vielen Namen machen, stoppen, „Genau transkribieren“. Erwartung: Upload-Balken, dann „Der Server transkribiert genau (0:05)“, danach „Genaue Fassung, transkribiert mit large-v3“. Für eine Stunde Aufnahme rund fünf Minuten; der Bildschirm bleibt so lange an.
+- [ ] Vergleichen: Wo hat die genaue Fassung Namen, Zahlen oder Dialektwörter richtig, die live falsch waren? Auffälligkeiten (falscher Sprecher, fehlende Sätze) gern notieren.
+- [ ] Danach Protokoll oder Zusammenfassung neu erstellen.
+
