@@ -18,7 +18,7 @@ services:
       - >-
         whisper-server --host 0.0.0.0 --port 8080
         -m /models/${WHISPER_MODEL:-ggml-large-v3-turbo-q5_0.bin}
-        -l ${LANGUAGE:-de} -t ${WHISPER_THREADS:-8} ${WHISPER_ARGS:--sns -bs 5}
+        -l ${LANGUAGE:-de} -t ${WHISPER_THREADS:-8} ${WHISPER_ARGS:--sns -bs 5 -mc 0}
     volumes:
       - ${MODELS_DIR:-./models}:/models:ro
     ports:

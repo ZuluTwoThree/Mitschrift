@@ -342,6 +342,8 @@ def build_segments(
 
     out: list[dict[str, Any]] = []
     for a, b in sentences:
+        if _repeats_previous(words[a:b], out):
+            continue
         run_start = a
         for index in range(a, b + 1):
             boundary = index == b or speakers[index] != speakers[run_start] or words[index].end - words[run_start].start > max_seconds
@@ -349,6 +351,15 @@ def build_segments(
                 out.append(_segment(words[run_start:index], label(speakers[run_start])))
                 run_start = index
     return out
+
+
+def _repeats_previous(sentence: list[Word], out: list[dict[str, Any]], min_words: int = 4) -> bool:
+    """Whisper kann in Wiederholungsschleifen geraten („Und das war ein sehr guter Satz.“ alle zwei Sekunden).
+    Ein Satz ab `min_words` Wörtern, der wörtlich dem vorigen gleicht, gilt als Schleife."""
+    if len(sentence) < min_words or not out:
+        return False
+    normalize = lambda text: " ".join(text.lower().split())  # noqa: E731
+    return normalize(" ".join(w.text for w in sentence)) == normalize(out[-1]["text"])
 
 
 def _segment(words: list[Word], speaker: str | None) -> dict[str, Any]:

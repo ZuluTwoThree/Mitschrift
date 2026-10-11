@@ -231,3 +231,10 @@ async def test_refine_request_validation() -> None:
         assert (await client.get("/v1/health")).json()["refine"] is False
         r = await client.post("/v1/transcriptions", content=b"x", headers={**AUTH, "Content-Type": "audio/wav"})
         assert r.status_code == 503 and r.json()["error"] == "refine_unavailable"
+
+
+def test_repetition_loop_is_collapsed() -> None:
+    loop = [_segment([(t, t + 0.5, "Und"), (t + 0.5, t + 1, "das"), (t + 1, t + 1.5, "war"), (t + 1.5, t + 2, "gut.")]) for t in (0, 2, 4, 6)]
+    short = [_segment([(10, 10.3, "Ja.")]), _segment([(10.4, 10.7, "Ja.")])]
+    texts = [s["text"] for s in build_segments(loop + short, None)]
+    assert texts == ["Und das war gut.", "Ja.", "Ja."]
