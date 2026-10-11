@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -214,11 +215,22 @@ def assign_speakers(words: list[Word], spans: list[SpeakerSpan], max_distance: f
     return result
 
 
+#: Floskeln, die Whisper aus Untertitel-Trainingsdaten in Stille oder Rauschen erfindet.
+_HALLUCINATION_PATTERNS = re.compile(
+    r"untertitel(ung)?\b.{0,40}\b(des|der|von|im auftrag)|amara\.org|(danke|dank) (fürs|für's|für das) zuschauen"
+    r"|thanks? for watching|subtitles? by|©",
+    re.IGNORECASE,
+)
+
+
 def likely_hallucination(segment: WhisperSegment, speaker_spans: list[SpeakerSpan]) -> bool:
-    """Whisper erfindet in Stille gern Sätze („Untertitel im Auftrag des ZDF“). Ein Abschnitt gilt als
-    erfunden, wenn das Streaming-Modell dort nichts gehört hat und Whisper selbst unsicher ist."""
-    heard = any(w.end > segment.start - 0.5 and w.start < segment.end + 0.5 for w in speaker_spans)
-    if heard:
+    """Whisper erfindet in Stille gern Sätze („Untertitelung des ZDF, 2020“). Bekannte Floskeln fallen immer
+    weg; sonst ein Abschnitt, in dem die Sprechertrennung kaum Sprache gehört hat und Whisper unsicher ist."""
+    if _HALLUCINATION_PATTERNS.search(segment.text) and len(segment.text.split()) <= 12:
+        return True
+    duration = max(segment.end - segment.start, 0.01)
+    heard = sum(max(0.0, min(segment.end, s.end) - max(segment.start, s.start)) for s in speaker_spans)
+    if heard >= min(0.3, duration * 0.25):
         return False
     return segment.no_speech_prob >= 0.5 or segment.avg_logprob <= -0.8
 
@@ -233,6 +245,8 @@ def flatten_words(whisper: list[WhisperSegment], speaker_spans: list[SpeakerSpan
     words: list[Word] = []
     for segment in whisper:
         if speaker_spans and likely_hallucination(segment, speaker_spans):
+            continue
+        if not speaker_spans and _HALLUCINATION_PATTERNS.search(segment.text) and len(segment.text.split()) <= 12:
             continue
         pieces = segment.words or [Word(segment.start, segment.end, segment.text)]
         for index, word in enumerate(pieces):

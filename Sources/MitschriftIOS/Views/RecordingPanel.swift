@@ -109,6 +109,8 @@ struct RecordingPanel: View {
             default: break
             }
             if let flag = environment["MITSCHRIFT_DEV_SHOW_EDITOR"], !flag.isEmpty, !recording.transcript.isEmpty { showEditor = true }
+            // Startet „Genau transkribieren“ ohne Rückfrage (Test gegen einen echten Server im Simulator).
+            if environment["MITSCHRIFT_DEV_REFINE"] == "1", recording.activity == nil { refine() }
             #endif
         }
     }

@@ -238,3 +238,20 @@ def test_repetition_loop_is_collapsed() -> None:
     short = [_segment([(10, 10.3, "Ja.")]), _segment([(10.4, 10.7, "Ja.")])]
     texts = [s["text"] for s in build_segments(loop + short, None)]
     assert texts == ["Und das war gut.", "Ja.", "Ja."]
+
+
+def test_known_whisper_phrases_are_dropped_even_without_diarization() -> None:
+    real = _segment([(0, 1, "Hallo"), (1, 2, "zusammen.")])
+    zdf = _segment([(55.5, 55.9, "Untertitelung"), (55.9, 56.2, "des"), (56.2, 56.5, "ZDF,"), (56.5, 56.8, "2020")])
+    amara = _segment([(60, 61, "Untertitel"), (61, 62, "der"), (62, 63, "Amara.org-Community")])
+    assert [s["text"] for s in build_segments([real, zdf, amara], None)] == ["Hallo zusammen."]
+    # Spricht jemand wirklich über Untertitel, bleibt es stehen (zu lang für eine Floskel).
+    talk = _segment([(0, 1, w) for w in "Die Untertitel des Films waren leider voller Fehler und kamen viel zu spät ins Bild herein.".split()])
+    assert build_segments([talk], None)[0]["text"].startswith("Die Untertitel")
+
+
+def test_segment_just_after_speech_counts_as_unheard() -> None:
+    spans = [SpeakerSpan(50.0, 55.47, "1")]
+    after = _segment([(55.54, 55.8, "Tschüss")], no_speech_prob=0.6)
+    inside = _segment([(54.0, 55.4, "Ende.")], no_speech_prob=0.6)
+    assert [s["text"] for s in build_segments([inside, after], spans)] == ["Ende."]
